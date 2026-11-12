@@ -524,6 +524,14 @@ function viewToday() {
     goal ? h('div', { class: 'bar', style: 'background:rgba(255,255,255,.3)' }, h('i', { style: `background:#fff;width:${Math.min(100, Math.round(100 * got / goal))}%` })) : null,
     h('div', { style: 'font-weight:500;font-size:13px;margin-top:6px' }, `Diese Woche: ${pts[me.id] || 0} Punkte ⭐`, streak(me) ? ` · 🔥 ${streak(me)} Tag${streak(me) > 1 ? 'e' : ''} Streak` : '', ` · 💰 Konto: ${bank(me)} P`, got > goal ? ` (+${got - goal} heute dazu)` : ''),
     bank(me) > 0 && goal > got ? h('button', { class: 'btn', style: 'margin-top:10px;background:#fff;color:#7c5cff', onclick: () => { const a = Math.min(bank(me), goal - got); if (confirm(`${a} Punkte vom Konto einlösen und das Tagesziel ist geschafft?`)) redeem(me, a); } }, `💰 ${Math.min(bank(me), goal - got)} Punkte vom Konto einlösen`) : null));
+  const ro = royals(d);
+  if (ro.length) {
+    const iAm = ro.some(r => r.m.id === me.id), taken = iAm && royalDayTaken(me, d);
+    wrap.append(h('div', { class: 'banner', style: 'background:linear-gradient(135deg,#f7b733,#fc4a1a)' },
+      `👑 ${ro.map(r => `${royalTitle(r.m.id)} ${r.m.name} ${r.m.emoji}`).join(' & ')} ${ro.length > 1 ? 'regieren' : 'regiert'} diese Woche! (${ro[0].pts} Punkte letzte Woche)`,
+      iAm && !taken ? h('div', {}, h('button', { class: 'btn', style: 'margin-top:10px;background:#fff;color:#fc4a1a', onclick: () => royalDialog(me) }, '👑 Freien Tag aussuchen')) : null,
+      iAm && taken ? h('div', { style: 'font-weight:500;margin-top:6px' }, `Dein freier Tag: ${DAYS[isoDay(new Date(taken.after_at))]} 😎`) : null));
+  }
   if (+me.waschtag === isoDay(d)) wrap.append(h('div', { class: 'banner wash' }, '🧺 Heute ist DEIN Waschtag! Korb runterbringen, sonst musst du selbst schauen wie du klarkommst 😜'));
   if (+me.waschtag === isoDay(new Date(d.getTime() + 864e5))) wrap.append(h('div', { class: 'card small' }, '🧺 Morgen ist dein Waschtag – denk an deinen Wäschekorb!'));
 
@@ -617,7 +625,7 @@ function viewPoints() {
   const ms = S.members.filter(m => m.active).sort((a, b) => (pts[b.id] || 0) - (pts[a.id] || 0));
   const max = Math.max(1, ...ms.map(m => pts[m.id] || 0));
   const medal = ['🥇', '🥈', '🥉'];
-  wrap.append(h('p', { class: 'muted' }, `Woche ${weekKey(d).split('-W')[1]} · 1 Punkt ≈ 5 Minuten Putzen`));
+  wrap.append(h('p', { class: 'muted' }, `Woche ${weekKey(d).split('-W')[1]} · Wer am Sonntagabend vorne liegt, wird nächste Woche 👑 König/Königin und darf sich einen freien Tag aussuchen!`));
   if (me.is_admin) wrap.append(h('div', { class: 'actions', style: 'margin-bottom:6px' },
     h('button', { class: 'btn ok', onclick: () => rewardDialog('bonus') }, '⭐ Belohnung geben'),
     h('button', { class: 'btn bad', onclick: () => rewardDialog('warn') }, '⚠️ Abmahnung'),
@@ -665,6 +673,30 @@ function rewardDialog(kind) {
       await S.store.insertCompletion({ id, task_id: kind, title: why.value.trim(), member_id: sel.value, period: dKey(new Date()), slot: id, status: 'done', points: p, after_at: now, created_at: now, created_by: S.me });
       s.remove(); rain(isB ? '⭐🌟🏆💖' : '⚠️🙈😤🧽'); toast(isB ? `${mName(sel.value)} bekommt +${p} Punkte ⭐` : `Abmahnung an ${mName(sel.value)} ⚠️ (${p} P)`); await refresh();
     } }, isB ? 'Belohnen ⭐' : 'Abmahnen ⚠️')));
+}
+
+// 👑 König/Königin der Woche: meiste Punkte letzte Woche → darf sich diese Woche einen freien Tag aussuchen
+const royalTitle = id => ({ k: 'König', q: 'Königin' })[(S.settings.titel || {})[id]] || 'Majestät';
+function royals(d = new Date()) {
+  const last = new Date(d); last.setDate(last.getDate() - 7);
+  const { pts } = weekPoints(last);
+  const max = Math.max(0, ...S.members.filter(m => m.active).map(m => pts[m.id] || 0));
+  if (max <= 0) return [];
+  return S.members.filter(m => m.active && (pts[m.id] || 0) === max).map(m => ({ m, pts: max }));
+}
+const ROYAL_TAG = 'Königlicher freier Tag 👑';
+const royalDayTaken = (m, d = new Date()) => S.completions.find(c => c.task_id === 'frei' && c.member_id === m.id && c.title === ROYAL_TAG && c.status === 'done' && weekKey(new Date(c.after_at)) === weekKey(d));
+function royalDialog(m) {
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const days = []; for (let i = 0; i < 7; i++) { const x = new Date(today); x.setDate(x.getDate() + i); if (weekKey(x) !== weekKey(today)) break; days.push(x); }
+  const s = sheet(h('div', { class: 'big-emoji' }, '👑'), h('h2', { style: 'justify-content:center' }, 'Eure Majestät wählt… 👑'),
+    h('p', { class: 'center muted small' }, 'Such dir einen freien Tag in dieser Woche aus. An dem Tag ist dein Tagesziel automatisch geschafft 😎'),
+    h('div', { class: 'grid', style: 'grid-template-columns:repeat(2,1fr)' }, days.map(x => h('button', { class: 'who', style: 'padding:14px 6px', onclick: async () => {
+      if (!confirm(`${DAYS[isoDay(x)]} als freien Tag nehmen? Das geht nur 1x pro Woche.`)) return;
+      const id = uid();
+      await S.store.insertCompletion({ id, task_id: 'frei', title: ROYAL_TAG, member_id: m.id, period: dKey(x), slot: id, status: 'done', points: dayGoal(m, x) || 1, after_at: x.toISOString(), created_at: new Date().toISOString(), created_by: m.id });
+      s.remove(); rain('👑🏰✨🎉'); toast(`${DAYS[isoDay(x)]} ist dein königlicher freier Tag! 👑`); await refresh();
+    } }, h('span', { class: 'e', style: 'font-size:26px' }, isoDay(x) >= 6 ? '🛋️' : '☕'), DAYS[isoDay(x)]))));
 }
 
 function freiDialog() {
@@ -803,7 +835,7 @@ function viewMore() {
   }
   wrap.append(pushCard());
   wrap.append(emojiCard(me));
-  wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '📱 App aufs Handy', h('span', { class: 'small muted' }, ' · Version 10')),
+  wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '📱 App aufs Handy', h('span', { class: 'small muted' }, ' · Version 11')),
     h('p', { class: 'small muted' }, 'iPhone: Teilen-Knopf ⬆️ → „Zum Home-Bildschirm“. Android: Menü ⋮ → „App installieren“ / „Zum Startbildschirm hinzufügen“.')));
   wrap.append(h('div', { class: 'card' },
     h('div', { class: 'actions' },
@@ -873,6 +905,7 @@ function memberDialog(m) {
   function wl(v) { return v === 0 ? 'keine Aufgaben' : v < 0.5 ? 'ganz wenig' : v < 1 ? 'etwas weniger' : v === 1 ? 'normal' : v <= 1.5 ? 'mehr' : 'viel mehr'; }
   const wt = h('select', {}, h('option', { value: '' }, 'kein Waschtag'), [1, 2, 3, 4, 5, 6, 7].map(i => h('option', { value: i, selected: +m.waschtag === i ? true : null }, DAYS[i])));
   const klein = h('input', { type: 'checkbox', checked: m.klein });
+  const titel = h('select', {}, [['', 'Majestät'], ['k', 'König'], ['q', 'Königin']].map(([v, l]) => h('option', { value: v, selected: ((S.settings.titel || {})[m.id] || '') === v ? true : null }, l)));
   const admin = h('input', { type: 'checkbox', checked: m.is_admin });
   const active = h('input', { type: 'checkbox', checked: m.active });
   const s = sheet(h('h2', {}, isNew ? 'Neue Person' : `${m.emoji} ${m.name} bearbeiten`),
@@ -880,6 +913,7 @@ function memberDialog(m) {
     h('label', { class: 'f' }, 'Wie viel Mo–Fr?'), wd,
     h('label', { class: 'f' }, 'Wie viel am Wochenende?'), we,
     h('label', { class: 'f' }, 'Waschtag'), wt,
+    h('label', { class: 'f' }, '👑 Titel, wenn Wochensieger*in'), titel,
     h('label', { class: 'chk' }, klein, 'Kind – nur leichte Aufgaben'),
     h('label', { class: 'chk' }, admin, 'Admin (sieht alles, darf ablehnen & ändern)'),
     h('label', { class: 'chk' }, active, 'Macht mit (aus = pausiert, z.B. Urlaub/krank)'),
@@ -888,7 +922,9 @@ function memberDialog(m) {
         if (!name.value.trim()) return name.focus();
         Object.assign(m, { name: name.value.trim(), emoji: emoji.value.trim() || '🙂', w_weekday: +wd.value, w_weekend: +we.value, waschtag: wt.value ? +wt.value : null, klein: klein.checked, is_admin: admin.checked, active: active.checked });
         if (!m.is_admin && m.id === S.me && !S.members.some(x => x.is_admin && x.id !== m.id)) return toast('Mindestens eine Person muss Admin bleiben 😉');
-        await S.store.upsert('members', m); s.remove(); toast('Gespeichert 👍'); await refresh();
+        await S.store.upsert('members', m);
+        S.settings = { ...S.settings, titel: { ...(S.settings.titel || {}), [m.id]: titel.value } }; await S.store.saveSettings(S.settings);
+        s.remove(); toast('Gespeichert 👍'); await refresh();
       } }, 'Speichern'),
       !isNew && m.pin_hash ? h('button', { class: 'btn sec', onclick: async () => { await S.store.patch('members', m.id, { pin_hash: null }); s.remove(); toast(`PIN zurückgesetzt – ${m.name} legt beim nächsten Öffnen eine neue fest`); await refresh(); } }, 'PIN zurücksetzen') : null,
       !isNew && m.id !== S.me ? h('button', { class: 'btn ghost', onclick: async () => { if (!confirm(`${m.name} wirklich entfernen?`)) return; await S.store.remove('members', m.id); s.remove(); await refresh(); } }, 'Entfernen') : null));
