@@ -803,7 +803,7 @@ function viewMore() {
   }
   wrap.append(pushCard());
   wrap.append(emojiCard(me));
-  wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '📱 App aufs Handy'),
+  wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '📱 App aufs Handy', h('span', { class: 'small muted' }, ' · Version 10')),
     h('p', { class: 'small muted' }, 'iPhone: Teilen-Knopf ⬆️ → „Zum Home-Bildschirm“. Android: Menü ⋮ → „App installieren“ / „Zum Startbildschirm hinzufügen“.')));
   wrap.append(h('div', { class: 'card' },
     h('div', { class: 'actions' },
@@ -1117,5 +1117,5 @@ function applyJoin(code) {
   if (S.conf) await connect(S.conf); else render();
   setInterval(() => { if (S.store && document.visibilityState === 'visible') refresh(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (S.store && document.visibilityState === 'visible') refresh(); });
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
 })();
