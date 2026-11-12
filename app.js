@@ -815,6 +815,11 @@ function pinView(m) {
 
 function viewWelcome() {
   const wrap = h('div');
+  if (S.lastErr) wrap.append(h('div', { class: 'card', style: 'border:2px solid var(--bad)' },
+    h('div', { style: 'font-weight:700' }, '😕 Verbindung zur Familie hat nicht geklappt'),
+    h('p', { class: 'small' }, 'Fehler: ', h('code', {}, S.lastErr.msg)),
+    h('p', { class: 'small muted' }, 'Mach bitte einen Screenshot davon für Claude 📸'),
+    h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => { const c = S.lastErr.conf; S.lastErr = null; connect(c); } }, '🔄 Nochmal versuchen'))));
   const u = h('input', { type: 'url', placeholder: 'https://xxxx.supabase.co' });
   const k = h('input', { type: 'text', placeholder: 'anon / publishable key' });
   const f = h('input', { type: 'text', placeholder: 'Familien-Geheimcode aus dem SQL-Skript' });
@@ -848,8 +853,8 @@ async function connect(conf) {
     if (meM()?.is_admin) cleanupPhotos();
   } catch (e) {
     console.error(e);
+    S.lastErr = { conf, msg: [e?.message, e?.code, e?.details, e?.hint].filter(Boolean).join(' · ') || String(e) };
     S.conf = null; S.loaded = false;
-    toast('Verbindung klappt nicht 😕 ' + (e.message || e.code || ''), 5000);
     render();
   }
 }
