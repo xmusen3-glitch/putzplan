@@ -25,8 +25,6 @@ create table if not exists public.members (
   pin_hash text, sort int default 0, rain text
 );
 alter table public.members add column if not exists rain text;
-alter table public.tasks add column if not exists proposed_by text;
-alter table public.completions add column if not exists helpers text;
 create table if not exists public.tasks (
   id text primary key, title text, room text, freq text, day int default 0, minutes int default 5,
   leicht boolean default false, per_person boolean default false, active boolean default true
@@ -42,11 +40,15 @@ create unique index if not exists completions_once on public.completions (task_i
 create index if not exists completions_created on public.completions (created_at);
 create table if not exists public.photos (id text primary key, data text, created_at timestamptz default now());
 create table if not exists public.settings (id int primary key, data jsonb);
+alter table public.tasks add column if not exists proposed_by text;
+alter table public.completions add column if not exists helpers text;
+alter table public.tasks add column if not exists points int;
+create table if not exists public.reactions (id text primary key, completion_id text, member_id text, emoji text, text text, created_at timestamptz default now());
 
 do $$
 declare t text;
 begin
-  foreach t in array array['members','tasks','completions','photos','settings'] loop
+  foreach t in array array['members','tasks','completions','photos','settings','reactions'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists familie on public.%I', t);
     execute format('create policy familie on public.%I for all to anon, authenticated using (public.fam_ok()) with check (public.fam_ok())', t);

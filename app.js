@@ -49,6 +49,13 @@ const roomIcon = r => (S?.settings?.rooms || {})[r] || ROOM_ICON[r] || '🧽';
 const allRooms = () => [...new Set([...Object.keys(ROOM_ICON).filter(r => r !== 'Extra' && r !== 'Wäsche'), ...Object.keys(S.settings.rooms || {}), ...S.tasks.map(x => x.room)])];
 const fmtTime = iso => { const d = new Date(iso); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const ptsFor = min => Math.max(1, Math.round((min || 5) / 5));
+// Punkte nach Anstrengung & Ekel-Faktor 🤢
+const DEFAULT_PTS = { 'eing-aufr': 2, 'eing-schuhe': 1, 'eing-ranzen': 1, 'eing-boden': 3, 'flur-saugen': 3, 'flur-wischen': 4, 'waschflur': 3,
+  'wz-decken': 1, 'wz-couch': 2, 'wz-tisch': 2, 'wz-kommode': 2, 'wz-tv': 3, 'wz-unter-couch': 4, 'ez-tisch': 2, 'ez-stuehle': 1, 'ez-stuehle-sauber': 3,
+  'boden-saugen': 4, 'boden-wischen': 4, 'k-sm-aus': 3, 'k-sm-ein': 3, 'k-flaechen': 3, 'k-muell-sort': 3, 'k-muell-raus': 3, 'k-boden': 4, 'k-kuehl': 5,
+  'gb-becken': 2, 'gb-wc': 4, 'gb-eimer': 2, 'gb-auff': 1, 'gb-fliesen': 3, 'gb-dusche': 5, 'spinnweben': 4, 'fenster': 5, 'zimmer': 5, 'wasch': 2,
+  'garten-rasen': 6, 'garten-laub': 4, 'garten-unkraut': 5, 'auffahrt-fegen': 3, 'garage-ordnen': 5, 'durch-drin': 3, 'durch-draussen': 2 };
+const ptsOf = t => (t?.points != null && t.points !== '' ? +t.points : DEFAULT_PTS[t?.id] ?? ptsOf(t));
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -88,7 +95,7 @@ const SEED_TASKS = [
   ['k-sm-ein', 'Spülmaschine einräumen, Tab rein & anmachen', 'Küche', 'daily', 0, 8, false],
   ['k-flaechen', 'Küchentisch & Arbeitsflächen aufräumen & wischen', 'Küche', 'daily', 0, 10, false],
   ['k-muell-sort', 'Müll sortieren (Bio, Plastik, Restmüll)', 'Küche', 'daily', 0, 5, true],
-  ['k-muell-raus', 'Müll rausbringen', 'Küche', 'daily', 0, 5, true],
+  ['k-muell-raus', 'Müll rausbringen (auch Bio 🤢)', 'Küche', 'daily', 0, 5, true],
   ['k-boden', 'Küchenboden saugen & wischen', 'Küche', 'weekdays', 0, 12, false],
   ['k-kuehl', 'Kühlschränke sortieren & auswischen', 'Küche', 'weekly', 6, 20, false],
   ['gb-becken', 'Waschbecken putzen', 'Gästebad', 'weekdays', 0, 5, false],
@@ -111,7 +118,7 @@ const SEED_MEMBERS = [
   ['Alex', '🦖', false, true, 0.6, 0.6, 5],
 ].map(([name, emoji, is_admin, klein, w_weekday, w_weekend, waschtag], i) => ({ id: uid(), name, emoji, is_admin, klein, w_weekday, w_weekend, waschtag, active: true, pin_hash: null, sort: i }));
 
-const DEFAULT_SETTINGS = { min_minutes: 2, koch_regel: true, foto_tage: 21, tagesziel: 6 };
+const DEFAULT_SETTINGS = { min_minutes: 2, koch_regel: true, foto_tage: 21, tagesziel: 10 };
 const DEFAULT_RAIN = '🎉✨⭐🧽💪🌈';
 
 // Virtuelle Aufgaben (nicht in der Aufgabenliste editierbar)
@@ -132,7 +139,7 @@ const DemoStore = {
   _t(t) { return LS.get('pp_demo_' + t, []); },
   _s(t, v) { LS.set('pp_demo_' + t, v); },
   async load() {
-    return { members: this._t('members'), tasks: this._t('tasks'), completions: this._t('completions'), settings: LS.get('pp_demo_settings', null) };
+    return { members: this._t('members'), tasks: this._t('tasks'), completions: this._t('completions'), reactions: this._t('reactions'), settings: LS.get('pp_demo_settings', null) };
   },
   async upsert(table, row) {
     const all = this._t(table); const i = all.findIndex(x => x.id === row.id);
@@ -164,13 +171,14 @@ const CloudStore = {
   _e(r) { if (r.error) { console.error(r.error); throw r.error; } return r.data; },
   async load() {
     const since = new Date(Date.now() - 40 * 864e5).toISOString();
-    const [m, t, c, s] = await Promise.all([
+    const [m, t, c, s, r] = await Promise.all([
       this.sb.from('members').select('*'),
       this.sb.from('tasks').select('*'),
       this.sb.from('completions').select('*').gte('created_at', since).order('created_at', { ascending: false }).limit(3000),
       this.sb.from('settings').select('*').eq('id', 1).maybeSingle(),
+      this.sb.from('reactions').select('*').gte('created_at', since).limit(3000),
     ]);
-    return { members: this._e(m), tasks: this._e(t), completions: this._e(c), settings: this._e(s)?.data || null };
+    return { members: this._e(m), tasks: this._e(t), completions: this._e(c), settings: this._e(s)?.data || null, reactions: r.error ? [] : r.data };
   },
   async upsert(table, row) { this._e(await this.sb.from(table).upsert(row)); },
   async upsertMany(table, rows) { this._e(await this.sb.from(table).upsert(rows)); },
@@ -204,6 +212,7 @@ async function reload() {
   S.members = (data.members || []).sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.name.localeCompare(b.name));
   S.tasks = data.tasks || [];
   S.completions = data.completions || [];
+  S.reactions = data.reactions || [];
   S.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   S.loaded = true;
 }
@@ -265,7 +274,7 @@ function weekPoints(d = new Date()) {
   for (const m of S.members) { pts[m.id] = 0; cnt[m.id] = 0; warn[m.id] = 0; bonus[m.id] = 0; }
   for (const c of S.completions) {
     if (c.status !== 'done' || !c.after_at) continue;
-    if (weekKey(new Date(c.after_at)) !== wk) continue;
+    if (weekKey(new Date(c.after_at)) !== wk || NOT_WEEK.has(c.task_id)) continue;
     const bag = c.task_id === 'warn' ? warn : c.task_id === 'bonus' ? bonus : cnt;
     for (const [id, p] of Object.entries(shares(c))) { pts[id] = (pts[id] || 0) + p; bag[id] = (bag[id] || 0) + 1; }
   }
@@ -385,9 +394,9 @@ async function finishTask(c) {
   const t = taskById(c.task_id);
   try {
     await S.store.putPhoto(photo, img);
-    await S.store.patch('completions', c.id, { status: 'done', after_photo: photo, after_at: new Date().toISOString(), points: c.task_id === 'adhoc' ? (+c.points || 2) : ptsFor(t?.minutes) });
+    await S.store.patch('completions', c.id, { status: 'done', after_photo: photo, after_at: new Date().toISOString(), points: c.task_id === 'adhoc' ? (+c.points || 2) : ptsOf(t) });
     rain(m.rain || DEFAULT_RAIN);
-    toast(['Mega! ✨', 'Stark gemacht! 💪', 'Sauber! 🧼', 'Du rockst! 🎸', 'Haken dran! ✅'][Math.floor(Math.random() * 5)] + ` +${c.task_id === 'adhoc' ? (+c.points || 2) : ptsFor(t?.minutes)} Punkte`);
+    toast(['Mega! ✨', 'Stark gemacht! 💪', 'Sauber! 🧼', 'Du rockst! 🎸', 'Haken dran! ✅'][Math.floor(Math.random() * 5)] + ` +${c.task_id === 'adhoc' ? (+c.points || 2) : ptsOf(t)} Punkte`);
   } catch (e) { toast('Hat nicht geklappt: ' + (e.message || e)); }
   await refresh();
 }
@@ -439,7 +448,7 @@ function taskCard(t, d, opts = {}) {
   const isAdhoc = t.id === 'adhoc';
   const ownerId = opts.owner;
   const meta = [];
-  if (!isAdhoc) meta.push(`${roomIcon(t.room)} ${t.room}`, `~${t.minutes} Min`, `+${ptsFor(t.minutes)} P`);
+  if (!isAdhoc) meta.push(`${roomIcon(t.room)} ${t.room}`, `~${t.minutes} Min`, `+${ptsOf(t)} P`);
   else meta.push(`+${c?.points || 2} P`);
   if (ownerId && ownerId !== me.id && !c) meta.push(`für ${mName(ownerId)}`);
   if (c && helpersOf(c).length) meta.push(`🤝 ${[c.member_id, ...helpersOf(c)].map(i => member(i)?.emoji || '').join('')} im Team`);
@@ -469,12 +478,33 @@ function taskCard(t, d, opts = {}) {
   return card;
 }
 
+const NOT_WEEK = new Set(['redeem', 'frei']);
 function dayPoints(memberId, d = new Date()) {
   const k = dKey(d);
   return S.completions.filter(c => involved(c, memberId) && c.status === 'done' && c.after_at && dKey(new Date(c.after_at)) === k && c.task_id !== 'bonus' && c.task_id !== 'warn')
     .reduce((s, c) => s + (shares(c)[memberId] || 0), 0);
 }
-const dayGoal = (m, d) => Math.round(weight(m, d) * (+S.settings.tagesziel || 6));
+const dayGoal = (m, d) => Math.round(weight(m, d) * (+S.settings.tagesziel || 10));
+const dayBack = n => { const x = new Date(); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() - n); return x; };
+// 💰 Punktekonto: was über dem Tagesziel war, kann man an anderen Tagen einlösen
+function bank(m) {
+  let earned = 0;
+  for (let i = 1; i <= 35; i++) { const d = dayBack(i), g = dayGoal(m, d); earned += Math.max(0, dayPoints(m.id, d) - g); }
+  const used = S.completions.filter(c => c.task_id === 'redeem' && c.member_id === m.id && c.status === 'done').reduce((s, c) => s + (+c.points || 0), 0);
+  return Math.max(0, earned - used);
+}
+// 🔥 Streak: Tage am Stück mit geschafftem Tagesziel
+function streak(m) {
+  let n = 0;
+  const t = dayBack(0); if (dayGoal(m, t) > 0 && dayPoints(m.id, t) >= dayGoal(m, t)) n++;
+  for (let i = 1; i <= 35; i++) { const d = dayBack(i), g = dayGoal(m, d); if (g <= 0) continue; if (dayPoints(m.id, d) >= g) n++; else break; }
+  return n;
+}
+async function redeem(m, amount) {
+  const now = new Date(), id = uid();
+  await S.store.insertCompletion({ id, task_id: 'redeem', title: 'Punkte vom Konto eingelöst 💰', member_id: m.id, period: dKey(now), slot: id, status: 'done', points: amount, after_at: now.toISOString(), created_at: now.toISOString(), created_by: S.me });
+  rain('💰🪙✨😎'); toast(`${amount} Punkte eingelöst – Tagesziel geschafft! 😎`); await refresh();
+}
 
 function viewToday() {
   const d = new Date(), me = meM(), wrap = h('div');
@@ -484,14 +514,15 @@ function viewToday() {
   // Alles Gemeinsame, was heute fällig oder liegengeblieben ist
   const shared = S.tasks.filter(t => t.active && !t.per_person && activeOn(t, d) && (dueOn(t, d) || overdueInPeriod(t, d)));
   const mineShared = shared.filter(t => { const c = compFor(t, d, null); return c && involved(c, me.id); });
-  const open = shared.filter(t => !compFor(t, d, null) && (!me.klein || t.leicht));
+  const open = shared.filter(t => !compFor(t, d, null));
   const goal = dayGoal(me, d), got = dayPoints(me.id, d);
 
   const greet = isoDay(d) >= 6 ? 'Schönes Wochenende' : ['Guten Morgen', 'Hallo', 'Na'][Math.min(2, Math.floor(d.getHours() / 8))];
   wrap.append(h('div', { class: 'banner' }, `${greet}, ${me.name}! ${me.emoji}`,
     h('div', { style: 'font-weight:500;margin:6px 0' }, goal ? (got >= goal ? `Tagesziel geschafft! 🎉 ${got}/${goal} Punkte` : `Dein Tagesziel: ${got}/${goal} Punkte – such dir unten was aus 👇`) : `Heute hast du frei 😎 (${got} Punkte)`),
     goal ? h('div', { class: 'bar', style: 'background:rgba(255,255,255,.3)' }, h('i', { style: `background:#fff;width:${Math.min(100, Math.round(100 * got / goal))}%` })) : null,
-    h('div', { style: 'font-weight:500;font-size:13px;margin-top:6px' }, `Diese Woche: ${pts[me.id] || 0} Punkte ⭐`)));
+    h('div', { style: 'font-weight:500;font-size:13px;margin-top:6px' }, `Diese Woche: ${pts[me.id] || 0} Punkte ⭐`, streak(me) ? ` · 🔥 ${streak(me)} Tag${streak(me) > 1 ? 'e' : ''} Streak` : '', ` · 💰 Konto: ${bank(me)} P`, got > goal ? ` (+${got - goal} heute dazu)` : ''),
+    bank(me) > 0 && goal > got ? h('button', { class: 'btn', style: 'margin-top:10px;background:#fff;color:#7c5cff', onclick: () => { const a = Math.min(bank(me), goal - got); if (confirm(`${a} Punkte vom Konto einlösen und das Tagesziel ist geschafft?`)) redeem(me, a); } }, `💰 ${Math.min(bank(me), goal - got)} Punkte vom Konto einlösen`) : null));
   if (+me.waschtag === isoDay(d)) wrap.append(h('div', { class: 'banner wash' }, '🧺 Heute ist DEIN Waschtag! Korb runterbringen, sonst musst du selbst schauen wie du klarkommst 😜'));
   if (+me.waschtag === isoDay(new Date(d.getTime() + 864e5))) wrap.append(h('div', { class: 'card small' }, '🧺 Morgen ist dein Waschtag – denk an deinen Wäschekorb!'));
 
@@ -505,11 +536,11 @@ function viewToday() {
   if (!open.length) wrap.append(h('p', { class: 'muted' }, 'Alles erledigt! Die Bude glänzt ✨🏆'));
   const rooms = [...new Set(open.map(t => t.room))];
   for (const r of rooms) {
-    const ts = open.filter(t => t.room === r).sort((a, b) => (overdueInPeriod(b, d) ? 1 : 0) - (overdueInPeriod(a, d) ? 1 : 0));
+    const ts = open.filter(t => t.room === r).sort((a, b) => (me.klein ? (b.leicht ? 1 : 0) - (a.leicht ? 1 : 0) : 0) || (overdueInPeriod(b, d) ? 1 : 0) - (overdueInPeriod(a, d) ? 1 : 0));
     const det = h('details', { class: 'card', open: rooms.length <= 3 ? true : null }, h('summary', {}, `${roomIcon(r)} ${r} `, h('span', { class: 'pill' }, ts.length)));
     for (const t of ts) det.append(h('div', { class: 'list-item' },
-      h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, t.title),
-        h('div', { class: 'small muted' }, `~${t.minutes} Min · +${ptsFor(t.minutes)} P`, overdueInPeriod(t, d) ? ' · ⏰ liegengeblieben' : '', t.freq === 'weekly' ? ' · 1x/Woche' : t.freq === 'monthly' ? ' · 1x/Monat' : '')),
+      h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, t.title, me.klein && t.leicht ? ' 👍' : me.klein ? ' 💪 (mit Hilfe)' : ''),
+        h('div', { class: 'small muted' }, `~${t.minutes} Min · +${ptsOf(t)} P`, overdueInPeriod(t, d) ? ' · ⏰ liegengeblieben' : '', t.freq === 'weekly' ? ' · 1x/Woche' : t.freq === 'monthly' ? ' · 1x/Monat' : '')),
       h('button', { class: 'btn', style: 'min-height:40px;padding:8px 12px', onclick: () => startTask(t, d) }, '📸 Mach ich')));
     wrap.append(det);
   }
@@ -522,11 +553,11 @@ function viewToday() {
       h('button', { class: 'btn sec', onclick: () => joinTask(c) }, '🤝 Mithelfen'))));
   }
   // Wochen-/Monatsaufgaben schon vorzeitig erledigen
-  const early = S.tasks.filter(t => t.active && !t.per_person && (t.freq === 'weekly' || t.freq === 'monthly') && !dueOn(t, d) && !overdueInPeriod(t, d) && !compFor(t, d, null) && (!me.klein || t.leicht));
+  const early = S.tasks.filter(t => t.active && !t.per_person && (t.freq === 'weekly' || t.freq === 'monthly') && !dueOn(t, d) && !overdueInPeriod(t, d) && !compFor(t, d, null));
   if (early.length) {
     const det = h('details', { class: 'card' }, h('summary', {}, `⏩ Schon vorziehen? `, h('span', { class: 'pill' }, early.length), h('div', { class: 'small muted', style: 'font-weight:500' }, 'Wochen- & Monatsaufgaben, die erst später dran sind')));
     for (const t of early) det.append(h('div', { class: 'list-item' },
-      h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, `${roomIcon(t.room)} ${t.title}`), h('div', { class: 'small muted' }, `${t.freq === 'weekly' ? 'eigentlich ' + DAYS[t.day || 1] : 'eigentlich ab dem ' + (t.day || 1) + '.'} · +${ptsFor(t.minutes)} P`)),
+      h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, `${roomIcon(t.room)} ${t.title}`), h('div', { class: 'small muted' }, `${t.freq === 'weekly' ? 'eigentlich ' + DAYS[t.day || 1] : 'eigentlich ab dem ' + (t.day || 1) + '.'} · +${ptsOf(t)} P`)),
       h('button', { class: 'btn', style: 'min-height:40px;padding:8px 12px', onclick: () => startTask(t, d) }, '📸 Jetzt')));
     wrap.append(det);
   }
@@ -588,11 +619,12 @@ function viewPoints() {
   wrap.append(h('p', { class: 'muted' }, `Woche ${weekKey(d).split('-W')[1]} · 1 Punkt ≈ 5 Minuten Putzen`));
   if (me.is_admin) wrap.append(h('div', { class: 'actions', style: 'margin-bottom:6px' },
     h('button', { class: 'btn ok', onclick: () => rewardDialog('bonus') }, '⭐ Belohnung geben'),
-    h('button', { class: 'btn bad', onclick: () => rewardDialog('warn') }, '⚠️ Abmahnung')));
+    h('button', { class: 'btn bad', onclick: () => rewardDialog('warn') }, '⚠️ Abmahnung'),
+    h('button', { class: 'btn sec', onclick: () => freiDialog() }, '🏖️ Frei geben')));
   ms.forEach((m, i) => wrap.append(h('div', { class: 'card' },
     h('div', { class: 'row' }, h('span', { style: 'font-size:28px' }, (pts[m.id] || 0) > 0 ? (medal[i] || m.emoji) : m.emoji),
       h('div', { class: 'grow' }, h('div', { style: 'font-weight:700' }, (pts[m.id] || 0) > 0 && medal[i] ? m.emoji + ' ' : '', m.name, i === 0 && (pts[m.id] || 0) > 0 ? ' 👑' : ''),
-        h('div', { class: 'small muted' }, `${cnt[m.id] || 0} Aufgaben`, bonus[m.id] ? ` · ⭐ ${bonus[m.id]} Belohnung${bonus[m.id] > 1 ? 'en' : ''}` : '', warn[m.id] ? ` · ⚠️ ${warn[m.id]} Abmahnung${warn[m.id] > 1 ? 'en' : ''}` : '')),
+        h('div', { class: 'small muted' }, streak(m) ? `🔥${streak(m)} · ` : '', `💰${bank(m)} · `, `${cnt[m.id] || 0} Aufgaben`, bonus[m.id] ? ` · ⭐ ${bonus[m.id]} Belohnung${bonus[m.id] > 1 ? 'en' : ''}` : '', warn[m.id] ? ` · ⚠️ ${warn[m.id]} Abmahnung${warn[m.id] > 1 ? 'en' : ''}` : '')),
       h('div', { style: 'font-weight:800;font-size:20px' }, pts[m.id] || 0)),
     h('div', { class: 'bar', style: 'margin-top:8px' }, h('i', { style: `width:${Math.max(0, Math.round(100 * (pts[m.id] || 0) / max))}%` })))));
   const total = ms.reduce((s, m) => s + Math.max(0, pts[m.id] || 0), 0);
@@ -634,10 +666,47 @@ function rewardDialog(kind) {
     } }, isB ? 'Belohnen ⭐' : 'Abmahnen ⚠️')));
 }
 
+function freiDialog() {
+  const sel = h('select', {}, S.members.filter(m => m.active).map(m => h('option', { value: m.id }, `${m.emoji} ${m.name}`)));
+  const when = h('select', {}, h('option', { value: 0 }, 'Heute'), h('option', { value: 1 }, 'Morgen'), h('option', { value: 2 }, 'Übermorgen'));
+  const why = h('input', { type: 'text', placeholder: 'z.B. Hat gestern die ganze Küche alleine gemacht 🦸' });
+  const s = sheet(h('div', { class: 'big-emoji' }, '🏖️'), h('h2', { style: 'justify-content:center' }, 'Frei geben'),
+    h('p', { class: 'small muted center' }, 'Die Person hat an dem Tag ihr Tagesziel automatisch geschafft (Streak bleibt!) 😎'),
+    h('label', { class: 'f' }, 'Wer?'), sel, h('label', { class: 'f' }, 'Wann?'), when, h('label', { class: 'f' }, 'Warum? (optional)'), why,
+    h('div', { class: 'actions' }, h('button', { class: 'btn big ok', onclick: async () => {
+      const m = member(sel.value), d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + (+when.value));
+      const g = dayGoal(m, d) || 1, id = uid();
+      await S.store.insertCompletion({ id, task_id: 'frei', title: why.value.trim() || 'Freier Tag 🏖️', member_id: m.id, period: dKey(d), slot: id, status: 'done', points: g, after_at: d.toISOString(), created_at: new Date().toISOString(), created_by: S.me });
+      s.remove(); rain('🏖️☀️😎🍹'); toast(`${m.name} hat ${['heute', 'morgen', 'übermorgen'][+when.value]} frei! 🏖️`); await refresh();
+    } }, 'Frei geben 🏖️')));
+}
+
 function photoImg(id, alt) {
   const img = h('img', { alt: alt || '', loading: 'lazy' });
   if (id) S.store.getPhoto(id).then(src => { if (src) { img.src = src; img.onclick = () => sheet(h('img', { class: 'zoom', src })); } else img.alt = 'Foto gelöscht'; });
   return img;
+}
+const REACTS = ['❤️', '👏', '😍', '🔥', '😂', '🤢', '🙈'];
+function reactionBar(c) {
+  const me = meM(), rs = (S.reactions || []).filter(r => r.completion_id === c.id);
+  const box = h('div', { style: 'margin-top:10px' });
+  const chips = h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap' }, REACTS.map(e => {
+    const who = rs.filter(r => r.emoji === e), mine = who.find(r => r.member_id === me.id);
+    return h('button', { title: who.map(r => mName(r.member_id)).join(', '), style: `border:1px solid ${mine ? 'var(--brand)' : 'var(--line)'};background:${mine ? 'var(--soft)' : 'transparent'};border-radius:99px;padding:4px 10px;font-size:16px`, onclick: async () => {
+      try { if (mine) await S.store.remove('reactions', mine.id); else { await S.store.upsert('reactions', { id: uid(), completion_id: c.id, member_id: me.id, emoji: e, created_at: new Date().toISOString() }); rain(e.repeat(3)); } }
+      catch (err) { return toast('Reaktionen gehen erst nach dem Datenbank-Update 🙈'); }
+      await refresh();
+    } }, e, who.length ? ' ' + who.length : '');
+  }));
+  box.append(chips);
+  const comments = rs.filter(r => r.text).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const r of comments) box.append(h('div', { class: 'small', style: 'margin-top:6px' }, h('b', {}, `${member(r.member_id)?.emoji || ''} ${mName(r.member_id)}: `), r.text,
+    r.member_id === me.id || me.is_admin ? h('button', { style: 'border:0;background:none;color:var(--muted)', onclick: async () => { await S.store.remove('reactions', r.id); await refresh(); } }, '✕') : null));
+  const inp = h('input', { type: 'text', placeholder: '💬 Kommentar schreiben…', style: 'padding:8px 10px' });
+  const send = async () => { const t = inp.value.trim(); if (!t) return; try { await S.store.upsert('reactions', { id: uid(), completion_id: c.id, member_id: me.id, text: t.slice(0, 300), created_at: new Date().toISOString() }); } catch { return toast('Kommentare gehen erst nach dem Datenbank-Update 🙈'); } await refresh(); };
+  inp.onkeydown = e => { if (e.key === 'Enter') send(); };
+  box.append(h('div', { class: 'row', style: 'margin-top:8px' }, inp, h('button', { class: 'btn sec', style: 'min-height:38px;padding:6px 12px', onclick: send }, '➤')));
+  return box;
 }
 function viewHistory() {
   const me = meM(), wrap = h('div');
@@ -649,6 +718,8 @@ function viewHistory() {
   if (!list.length) wrap.append(h('p', { class: 'muted' }, 'Noch nix erledigt. Zeit, das zu ändern! 😄'));
   for (const c of list) {
     const m = member(c.member_id);
+    if (c.task_id === 'redeem') continue;
+    if (c.task_id === 'frei') { wrap.append(h('div', { class: 'card', style: 'border-left:5px solid var(--ok)' }, h('div', { class: 'row' }, h('span', { style: 'font-size:24px' }, '🏖️'), h('div', { class: 'grow' }, h('div', { style: 'font-weight:700' }, `Frei für ${m?.emoji || ''} ${m?.name || '?'} am ${c.period.split('-').reverse().slice(0, 2).join('.')}.`), h('div', { class: 'small muted' }, c.title))))); continue; }
     if (c.task_id === 'bonus' || c.task_id === 'warn') {
       wrap.append(h('div', { class: 'card', style: `border-left:5px solid var(--${c.task_id === 'bonus' ? 'ok' : 'bad'})` }, h('div', { class: 'row' }, h('span', { style: 'font-size:24px' }, c.task_id === 'bonus' ? '⭐' : '⚠️'),
         h('div', { class: 'grow' }, h('div', { style: 'font-weight:700' }, `${c.task_id === 'bonus' ? 'Belohnung' : 'Abmahnung'} für ${m?.emoji || ''} ${m?.name || '?'}`),
@@ -663,6 +734,7 @@ function viewHistory() {
       h('div', { class: 'thumbs' },
         h('figure', {}, photoImg(c.before_photo, 'vorher'), h('figcaption', {}, 'VORHER')),
         h('figure', {}, c.after_photo ? photoImg(c.after_photo, 'nachher') : h('img', { alt: '' }), h('figcaption', {}, 'NACHHER'))));
+    if (c.status === 'done') card.append(reactionBar(c));
     if (me.is_admin && c.status === 'done') card.append(h('div', { class: 'actions' }, h('button', { class: 'btn ghost', onclick: async () => {
       if (!confirm(`Nicht ordentlich? Aufgabe ablehnen – ${m?.name} verliert die Punkte und die Aufgabe ist wieder offen.`)) return;
       await S.store.patch('completions', c.id, { status: 'rejected', note: 'abgelehnt' });
@@ -837,6 +909,7 @@ function taskDialog(t) {
   const upd = () => { dayBox.replaceChildren(freq.value === 'weekly' ? [h('label', { class: 'f' }, 'An welchem Tag?'), dayW] : freq.value === 'monthly' ? [h('label', { class: 'f' }, 'Ab welchem Tag im Monat? (1–28)'), dayM] : []); };
   freq.onchange = upd; upd();
   const minutes = h('input', { type: 'number', min: 1, max: 120, value: t.minutes });
+  const points = h('input', { type: 'number', min: 1, max: 30, value: ptsOf(t) });
   const leicht = h('input', { type: 'checkbox', checked: t.leicht });
   const pp = h('input', { type: 'checkbox', checked: t.per_person });
   const active = h('input', { type: 'checkbox', checked: t.active });
@@ -844,14 +917,15 @@ function taskDialog(t) {
     !admin ? h('p', { class: 'small muted' }, 'Dein Vorschlag geht an die Admins. Sobald er angenommen ist, taucht er bei allen auf 😊') : null,
     h('label', { class: 'f' }, 'Aufgabe'), title, h('label', { class: 'f' }, 'Raum'), room,
     h('label', { class: 'f' }, 'Wie oft?'), freq, dayBox,
-    h('label', { class: 'f' }, 'Dauer ungefähr (Minuten) – 5 Min = 1 Punkt'), minutes,
+    h('label', { class: 'f' }, '⭐ Punkte (nach Anstrengung & Ekel-Faktor 🤢)'), points,
+    h('label', { class: 'f' }, 'Dauer ungefähr (Minuten)'), minutes,
     h('label', { class: 'chk' }, leicht, 'Leicht – können auch die Kleinen'),
     h('label', { class: 'chk' }, pp, 'Jeder macht das für sich (z.B. eigenes Zimmer)'),
     admin ? h('label', { class: 'chk' }, active, 'Aktiv') : null,
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: async () => {
         if (!title.value.trim()) return title.focus();
-        Object.assign(t, { title: title.value.trim(), room: room.value, freq: freq.value, day: freq.value === 'weekly' ? +dayW.value : freq.value === 'monthly' ? Math.min(28, Math.max(1, +dayM.value || 1)) : 0, minutes: Math.max(1, +minutes.value || 5), leicht: leicht.checked, per_person: pp.checked, active: active.checked });
+        Object.assign(t, { title: title.value.trim(), room: room.value, freq: freq.value, day: freq.value === 'weekly' ? +dayW.value : freq.value === 'monthly' ? Math.min(28, Math.max(1, +dayM.value || 1)) : 0, minutes: Math.max(1, +minutes.value || 5), points: Math.max(1, +points.value || 1), leicht: leicht.checked, per_person: pp.checked, active: active.checked });
         if (!admin) { t.active = false; t.proposed_by = S.me; }
         try { await S.store.upsert('tasks', t); } catch (e) { return toast('Hat nicht geklappt: ' + (e.message || e)); }
         s.remove(); toast(admin ? 'Gespeichert 👍' : 'Vorschlag ist raus! 💡 Danke!'); await refresh();
