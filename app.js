@@ -104,8 +104,8 @@ const SEED_MEMBERS = [
   ['Mia', '🌸', false, false, 1, 1, 2],
   ['Felix', '💪', false, false, 0.25, 1.6, 6],
   ['Iris', '🍳', false, false, 1, 1, 3],
-  ['Kind 1', '🦄', false, true, 0.6, 0.6, 4],
-  ['Kind 2', '🦖', false, true, 0.6, 0.6, 5],
+  ['Lily', '🦄', false, true, 0.6, 0.6, 4],
+  ['Alex', '🦖', false, true, 0.6, 0.6, 5],
 ].map(([name, emoji, is_admin, klein, w_weekday, w_weekend, waschtag], i) => ({ id: uid(), name, emoji, is_admin, klein, w_weekday, w_weekend, waschtag, active: true, pin_hash: null, sort: i }));
 
 const DEFAULT_SETTINGS = { min_minutes: 2, koch_regel: true, foto_tage: 21, tagesziel: 6 };
