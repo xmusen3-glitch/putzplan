@@ -800,6 +800,7 @@ function viewMore() {
       mine.length ? h('p', { class: 'small' }, `Warten auf OK: ${mine.map(t => t.title).join(', ')} ⏳`) : null,
       h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => taskDialog(null) }, '💡 Aufgabe vorschlagen'))));
   }
+  wrap.append(pushCard());
   wrap.append(emojiCard(me));
   wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '📱 App aufs Handy'),
     h('p', { class: 'small muted' }, 'iPhone: Teilen-Knopf ⬆️ → „Zum Home-Bildschirm“. Android: Menü ⋮ → „App installieren“ / „Zum Startbildschirm hinzufügen“.')));
@@ -960,6 +961,39 @@ const OUTDOOR = [
   ['durch-draussen', 'Durchgang draußen fegen', 'Durchgang draußen', 'weekly', 5, 10],
 ].map(([id, title, room, freq, day, minutes]) => ({ id, title, room, freq, day, minutes, leicht: false, per_person: false, active: true }));
 
+// ---------- 🔔 Push ----------
+const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+async function pushFn(job, body) {
+  const r = await fetch(`${S.conf.u}/functions/v1/push?job=${job}`, { method: body ? 'POST' : 'GET', headers: { 'x-familie': S.conf.f, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) throw new Error('Push-Server antwortet nicht (' + r.status + ') – ist die Function „push“ angelegt und „Verify JWT“ aus?');
+  return r.json();
+}
+const urlB64 = b => { const p = '='.repeat((4 - b.length % 4) % 4); const raw = atob((b + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...raw].map(c => c.charCodeAt(0))); };
+async function enablePush(silent) {
+  if (S.conf?.mode !== 'cloud') return silent || toast('Push geht nur mit der echten Familien-Datenbank, nicht im Demo 😉');
+  if (!pushSupported()) return silent || toast(isIOS ? 'Auf dem iPhone geht Push nur, wenn die App auf dem Home-Bildschirm ist 📲' : 'Dieser Browser kann leider keine Push-Nachrichten 😕');
+  try {
+    const perm = Notification.permission === 'granted' ? 'granted' : silent ? Notification.permission : await Notification.requestPermission();
+    if (perm !== 'granted') return silent || toast('Benachrichtigungen wurden nicht erlaubt 🙈 (in den Handy-Einstellungen änderbar)');
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) { const { publicKey } = await pushFn('key'); sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64(publicKey) }); }
+    const id = (await sha(sub.endpoint)).slice(0, 32);
+    await S.store.upsert('push_subs', { id, member_id: S.me, sub: JSON.stringify(sub.toJSON()) });
+    LS.set('pp_push', S.me);
+    if (!silent) { await pushFn('test', { member_id: S.me }); toast('🔔 Benachrichtigungen sind an! Gleich kommt eine Test-Nachricht.'); render(); }
+  } catch (e) { if (!silent) toast('Push hat nicht geklappt: ' + (e.message || e), 6000); }
+}
+function pushCard() {
+  const on = pushSupported() && Notification.permission === 'granted' && LS.get('pp_push') === S.me;
+  return h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '🔔 Benachrichtigungen'),
+    h('p', { class: 'small muted' }, on ? 'Sind an ✅ Du bekommst Bescheid bei Waschtag, Tagesziel, Reaktionen, Belohnungen & Teamwork.' :
+      isIOS && !isStandalone() ? 'Auf dem iPhone erst die App auf den Home-Bildschirm legen (Teilen ⬆️ → „Zum Home-Bildschirm“) und von dort öffnen 📲' : 'Lass dich erinnern: Waschtag, Tagesziel, Reaktionen auf deine Fotos, Belohnungen…'),
+    h('div', { class: 'actions' }, h('button', { class: on ? 'btn sec' : 'btn', onclick: () => enablePush(false) }, on ? '🔔 Test-Nachricht schicken' : '🔔 Benachrichtigungen aktivieren')));
+}
+
 // ---------- Login ----------
 function viewWho() {
   const wrap = h('div');
@@ -988,6 +1022,7 @@ function pinView(m) {
       m.pin_hash = hsh;
     } else if (hsh !== m.pin_hash) { pin = ''; msg.textContent = 'Falsche PIN 🙅 Nochmal!'; dots.animate([{ transform: 'translateX(-8px)' }, { transform: 'translateX(8px)' }, { transform: 'none' }], 250); return drawDots(); }
     S.me = m.id; LS.set('pp_me', m.id); S.tab = 'heute';
+    if (LS.get('pp_push')) enablePush(true);
     toast(`Hallo ${m.name}! ${m.emoji}`);
     render();
   }
@@ -1038,6 +1073,7 @@ async function connect(conf) {
     LS.set('pp_conf', conf);
     render();
     if (meM()?.is_admin) cleanupPhotos();
+    if (S.me && LS.get('pp_push') && LS.get('pp_push') !== S.me) enablePush(true);
   } catch (e) {
     console.error(e);
     S.lastErr = { conf, msg: [e?.message, e?.code, e?.details, e?.hint].filter(Boolean).join(' · ') || String(e) };
