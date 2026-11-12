@@ -44,8 +44,9 @@ async function sha(s) {
 }
 const DAYS = ['', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 const FREQ = { daily: 'täglich', weekdays: 'Mo–Fr (5x/Woche)', weekly: '1x pro Woche', monthly: '1x im Monat', weekend: 'am Wochenende' };
-const ROOM_ICON = { 'Eingang': '🚪', 'Flur & Treppe': '🪜', 'Wohnzimmer': '🛋️', 'Esszimmer': '🍽️', 'Küche': '🍳', 'Gästebad': '🚽', 'Wäsche': '🧺', 'Ganzes Haus': '🏠', 'Eigenes Zimmer': '🛏️', 'Extra': '✨' };
-const roomIcon = r => ROOM_ICON[r] || '🧽';
+const ROOM_ICON = { 'Garten': '🌳', 'Auffahrt': '🚗', 'Garage': '🔧', 'Durchgang drinnen': '🚶', 'Durchgang draußen': '🌿', 'Eingang': '🚪', 'Flur & Treppe': '🪜', 'Wohnzimmer': '🛋️', 'Esszimmer': '🍽️', 'Küche': '🍳', 'Gästebad': '🚽', 'Wäsche': '🧺', 'Ganzes Haus': '🏠', 'Eigenes Zimmer': '🛏️', 'Extra': '✨' };
+const roomIcon = r => (S?.settings?.rooms || {})[r] || ROOM_ICON[r] || '🧽';
+const allRooms = () => [...new Set([...Object.keys(ROOM_ICON).filter(r => r !== 'Extra' && r !== 'Wäsche'), ...Object.keys(S.settings.rooms || {}), ...S.tasks.map(x => x.room)])];
 const fmtTime = iso => { const d = new Date(iso); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const ptsFor = min => Math.max(1, Math.round((min || 5) / 5));
 const LS = {
@@ -249,15 +250,24 @@ function personalTasksFor(m, d) {
   if (+m.waschtag === isoDay(d)) out.unshift(WASCH);
   return out;
 }
+const helpersOf = c => { try { const a = JSON.parse(c.helpers || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+const involved = (c, id) => c.member_id === id || helpersOf(c).includes(id);
+// Punkte einer Aufgabe werden fair geteilt (aufgerundet)
+function shares(c) {
+  const ids = [c.member_id, ...helpersOf(c).filter(x => x !== c.member_id)];
+  const p = +c.points || 0;
+  if (ids.length === 1 || p < 0) return { [c.member_id]: p };
+  const each = Math.ceil(p / ids.length);
+  return Object.fromEntries(ids.map(i => [i, each]));
+}
 function weekPoints(d = new Date()) {
   const wk = weekKey(d), pts = {}, cnt = {}, warn = {}, bonus = {};
   for (const m of S.members) { pts[m.id] = 0; cnt[m.id] = 0; warn[m.id] = 0; bonus[m.id] = 0; }
   for (const c of S.completions) {
     if (c.status !== 'done' || !c.after_at) continue;
     if (weekKey(new Date(c.after_at)) !== wk) continue;
-    pts[c.member_id] = (pts[c.member_id] || 0) + (+c.points || 0);
     const bag = c.task_id === 'warn' ? warn : c.task_id === 'bonus' ? bonus : cnt;
-    bag[c.member_id] = (bag[c.member_id] || 0) + 1;
+    for (const [id, p] of Object.entries(shares(c))) { pts[id] = (pts[id] || 0) + p; bag[id] = (bag[id] || 0) + 1; }
   }
   return { pts, cnt, warn, bonus };
 }
@@ -322,8 +332,29 @@ function openCamera(label, kind) {
 }
 
 // ---------- Aktionen ----------
+function teamPicker(title) {
+  return new Promise(resolve => {
+    const me = meM(), picked = new Set();
+    const chips = h('div', { class: 'grid', style: 'grid-template-columns:repeat(3,1fr)' });
+    const draw = () => chips.replaceChildren(...S.members.filter(m => m.active && m.id !== me.id).map(m => h('button', { class: 'who', style: `padding:10px 4px;${picked.has(m.id) ? 'border-color:var(--brand);background:var(--soft)' : ''}`, onclick: () => { picked.has(m.id) ? picked.delete(m.id) : picked.add(m.id); draw(); } }, h('span', { class: 'e', style: 'font-size:30px' }, m.emoji), m.name, picked.has(m.id) ? ' ✓' : '')));
+    draw();
+    let done = false;
+    const s = sheet(h('div', { class: 'big-emoji' }, '🤝'), h('h2', { style: 'justify-content:center;text-align:center' }, title),
+      h('p', { class: 'center muted small' }, 'Machst du das alleine oder mit jemandem zusammen? (Die Punkte werden fair geteilt)'), chips,
+      h('div', { class: 'actions' }, h('button', { class: 'btn big', onclick: () => { done = true; s.remove(); resolve([...picked]); } }, '📸 Los – Vorher-Foto')));
+    new MutationObserver((_, o) => { if (!s.isConnected) { o.disconnect(); if (!done) resolve(null); } }).observe(document.body, { childList: true });
+  });
+}
+async function joinTask(c) {
+  const hs = helpersOf(c); if (hs.includes(S.me) || c.member_id === S.me) return;
+  try { await S.store.patch('completions', c.id, { helpers: JSON.stringify([...hs, S.me]) }); rain('🤝💪✨'); toast(`Du hilfst ${mName(c.member_id)} mit! 🤝`); }
+  catch (e) { toast('Hat nicht geklappt: ' + (e.message || e)); }
+  await refresh();
+}
 async function startTask(t, d) {
   const m = meM();
+  const team = await teamPicker(t.title);
+  if (team === null) return;
   const img = await openCamera(t.title, 'before');
   if (!img) return;
   const id = uid(), photo = id + '-v';
@@ -332,8 +363,9 @@ async function startTask(t, d) {
     await S.store.insertCompletion({
       id, task_id: t.id, title: t.title, member_id: m.id, period: periodOf(t, d), slot: slotOf(t, m.id),
       status: 'started', before_photo: photo, before_at: new Date().toISOString(), created_at: new Date().toISOString(),
+      ...(team.length ? { helpers: JSON.stringify(team) } : {}),
     });
-    toast('Vorher-Foto ist drin 📸 Jetzt loslegen! 💪');
+    toast(team.length ? `Vorher-Foto ist drin 📸 Los geht's im Team mit ${team.map(mName).join(' & ')}! 🤝` : 'Vorher-Foto ist drin 📸 Jetzt loslegen! 💪');
   } catch (e) {
     S.store.delPhoto(photo).catch(() => {});
     if (e?.code === 'conflict') toast('Oha, da war jemand schneller 😅');
@@ -410,6 +442,7 @@ function taskCard(t, d, opts = {}) {
   if (!isAdhoc) meta.push(`${roomIcon(t.room)} ${t.room}`, `~${t.minutes} Min`, `+${ptsFor(t.minutes)} P`);
   else meta.push(`+${c?.points || 2} P`);
   if (ownerId && ownerId !== me.id && !c) meta.push(`für ${mName(ownerId)}`);
+  if (c && helpersOf(c).length) meta.push(`🤝 ${[c.member_id, ...helpersOf(c)].map(i => member(i)?.emoji || '').join('')} im Team`);
   const card = h('div', { class: 'card task-card' });
   const done = c?.status === 'done';
   card.append(h('div', { class: 'task' + (done ? ' done' : '') },
@@ -425,7 +458,10 @@ function taskCard(t, d, opts = {}) {
       act.append(h('button', { class: 'btn ok', onclick: () => finishTask(c) }, '📸 Fertig: Nachher-Foto'),
         h('button', { class: 'btn ghost', onclick: () => cancelTask(c) }, 'Abbrechen'),
         h('span', { class: 'small muted', style: 'align-self:center' }, `läuft seit ${mins} Min`));
-    } else act.append(h('span', { class: 'small muted' }, `⏳ ${mName(c.member_id)} ist gerade dran`));
+    } else {
+      act.append(h('span', { class: 'small muted', style: 'align-self:center' }, `⏳ ${mName(c.member_id)} ist dran (macht die Fotos)`));
+      if (!helpersOf(c).includes(me.id)) act.append(h('button', { class: 'btn sec', onclick: () => joinTask(c) }, '🤝 Mithelfen'));
+    }
   } else if (done) {
     act.append(h('span', { class: 'small muted' }, `Erledigt von ${mName(c.member_id)} · ${fmtTime(c.after_at)}`));
   }
@@ -435,8 +471,8 @@ function taskCard(t, d, opts = {}) {
 
 function dayPoints(memberId, d = new Date()) {
   const k = dKey(d);
-  return S.completions.filter(c => c.member_id === memberId && c.status === 'done' && c.after_at && dKey(new Date(c.after_at)) === k && c.task_id !== 'bonus' && c.task_id !== 'warn')
-    .reduce((s, c) => s + (+c.points || 0), 0);
+  return S.completions.filter(c => involved(c, memberId) && c.status === 'done' && c.after_at && dKey(new Date(c.after_at)) === k && c.task_id !== 'bonus' && c.task_id !== 'warn')
+    .reduce((s, c) => s + (shares(c)[memberId] || 0), 0);
 }
 const dayGoal = (m, d) => Math.round(weight(m, d) * (+S.settings.tagesziel || 6));
 
@@ -447,7 +483,7 @@ function viewToday() {
   const adhoc = S.completions.filter(c => c.task_id === 'adhoc' && c.member_id === me.id && (c.status === 'todo' || c.status === 'started' || (c.status === 'done' && c.period === dKey(d))));
   // Alles Gemeinsame, was heute fällig oder liegengeblieben ist
   const shared = S.tasks.filter(t => t.active && !t.per_person && activeOn(t, d) && (dueOn(t, d) || overdueInPeriod(t, d)));
-  const mineShared = shared.filter(t => { const c = compFor(t, d, null); return c && c.member_id === me.id; });
+  const mineShared = shared.filter(t => { const c = compFor(t, d, null); return c && involved(c, me.id); });
   const open = shared.filter(t => !compFor(t, d, null) && (!me.klein || t.leicht));
   const goal = dayGoal(me, d), got = dayPoints(me.id, d);
 
@@ -478,6 +514,23 @@ function viewToday() {
     wrap.append(det);
   }
 
+  const running = S.completions.filter(c => c.status === 'started' && c.member_id !== me.id && !helpersOf(c).includes(me.id) && c.task_id !== 'adhoc');
+  if (running.length) {
+    wrap.append(h('h2', {}, 'Läuft gerade 🏃', h('small', {}, 'hilf mit, teilt euch die Punkte')));
+    for (const c of running) wrap.append(h('div', { class: 'card' }, h('div', { class: 'row' }, h('span', { style: 'font-size:24px' }, member(c.member_id)?.emoji || '🙂'),
+      h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, c.title), h('div', { class: 'small muted' }, `${mName(c.member_id)}${helpersOf(c).length ? ' + ' + helpersOf(c).map(mName).join(', ') : ''}`)),
+      h('button', { class: 'btn sec', onclick: () => joinTask(c) }, '🤝 Mithelfen'))));
+  }
+  // Wochen-/Monatsaufgaben schon vorzeitig erledigen
+  const early = S.tasks.filter(t => t.active && !t.per_person && (t.freq === 'weekly' || t.freq === 'monthly') && !dueOn(t, d) && !overdueInPeriod(t, d) && !compFor(t, d, null) && (!me.klein || t.leicht));
+  if (early.length) {
+    const det = h('details', { class: 'card' }, h('summary', {}, `⏩ Schon vorziehen? `, h('span', { class: 'pill' }, early.length), h('div', { class: 'small muted', style: 'font-weight:500' }, 'Wochen- & Monatsaufgaben, die erst später dran sind')));
+    for (const t of early) det.append(h('div', { class: 'list-item' },
+      h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, `${roomIcon(t.room)} ${t.title}`), h('div', { class: 'small muted' }, `${t.freq === 'weekly' ? 'eigentlich ' + DAYS[t.day || 1] : 'eigentlich ab dem ' + (t.day || 1) + '.'} · +${ptsFor(t.minutes)} P`)),
+      h('button', { class: 'btn', style: 'min-height:40px;padding:8px 12px', onclick: () => startTask(t, d) }, '📸 Jetzt')));
+    wrap.append(det);
+  }
+
   const monthly = personal.filter(t => t.freq === 'monthly');
   if (monthly.length) { wrap.append(h('h2', {}, 'Diesen Monat', h('small', {}, 'bis Monatsende'))); monthly.forEach(t => wrap.append(taskCard(t, d))); }
 
@@ -491,7 +544,7 @@ function viewToday() {
   wrap.append(h('h2', {}, 'Heute geschafft 💪', h('small', {}, `${doneToday.length} Aufgaben`)));
   const fam = h('div', { class: 'card' });
   for (const m of S.members.filter(m => m.active)) {
-    const n = doneToday.filter(c => c.member_id === m.id).length, g = dayGoal(m, d), p = dayPoints(m.id, d);
+    const n = doneToday.filter(c => involved(c, m.id)).length, g = dayGoal(m, d), p = dayPoints(m.id, d);
     fam.append(h('div', { class: 'list-item' }, h('span', { style: 'font-size:22px' }, m.emoji), h('div', { class: 'grow' },
       h('div', { style: 'font-weight:600' }, m.name, ' ', h('span', { class: 'small muted' }, `${n} erledigt · ${p}${g ? '/' + g : ''} P`)),
       g ? h('div', { class: 'bar', style: 'margin-top:4px' }, h('i', { style: `width:${Math.min(100, Math.round(100 * p / g))}%` })) : null),
@@ -606,7 +659,7 @@ function viewHistory() {
     const card = h('div', { class: 'card' },
       h('div', { class: 'row' }, h('span', { style: 'font-size:24px' }, m?.emoji || '🙂'),
         h('div', { class: 'grow' }, h('div', { style: 'font-weight:700' }, c.title || taskById(c.task_id)?.title || 'Aufgabe'),
-          h('div', { class: 'small muted' }, `${m?.name || '?'} · ${c.status === 'done' ? `fertig ${fmtTime(c.after_at)} · ${dur} Min · +${c.points || 0} P` : 'läuft gerade ⏳'}`))),
+          h('div', { class: 'small muted' }, `${m?.name || '?'}${helpersOf(c).length ? ' 🤝 ' + helpersOf(c).map(mName).join(', ') : ''} · ${c.status === 'done' ? `fertig ${fmtTime(c.after_at)} · ${dur} Min · +${c.points || 0} P` : 'läuft gerade ⏳'}`))),
       h('div', { class: 'thumbs' },
         h('figure', {}, photoImg(c.before_photo, 'vorher'), h('figcaption', {}, 'VORHER')),
         h('figure', {}, c.after_photo ? photoImg(c.after_photo, 'nachher') : h('img', { alt: '' }), h('figcaption', {}, 'NACHHER'))));
@@ -656,6 +709,24 @@ function viewMore() {
         S.settings = { ...S.settings, min_minutes: Math.max(0, +minIn.value || 0), koch_regel: koch.checked, tagesziel: Math.max(0, +ziel.value || 0) };
         await S.store.saveSettings(S.settings); toast('Gespeichert 👍'); render();
       } }, 'Speichern'))));
+  }
+  if (me.is_admin) {
+    const props = S.tasks.filter(t => t.proposed_by);
+    if (props.length) wrap.prepend(h('div', { class: 'card', style: 'border:2px solid var(--warn)' }, h('div', { style: 'font-weight:700' }, `💡 Vorschläge (${props.length})`),
+      ...props.map(t => h('div', { class: 'list-item' }, h('div', { class: 'grow' }, h('div', { style: 'font-weight:600' }, `${roomIcon(t.room)} ${t.title}`), h('div', { class: 'small muted' }, `von ${mName(t.proposed_by)} · ${FREQ[t.freq]} · ${t.minutes} Min`)),
+        h('button', { class: 'btn ok', style: 'min-height:38px;padding:6px 10px', onclick: async () => { await S.store.patch('tasks', t.id, { active: true, proposed_by: null }); rain('💡✅🎉'); toast('Angenommen! 🎉'); await refresh(); } }, '✅'),
+        h('button', { class: 'btn ghost', style: 'min-height:38px;padding:6px 10px', onclick: () => taskDialog(t) }, '✏️'),
+        h('button', { class: 'btn ghost', style: 'min-height:38px;padding:6px 10px', onclick: async () => { if (!confirm('Vorschlag ablehnen?')) return; await S.store.remove('tasks', t.id); await refresh(); } }, '❌')))));
+    const missing = OUTDOOR.filter(o => !S.tasks.some(t => t.id === o.id));
+    if (missing.length) wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '🌳 Draußen & mehr Bereiche'),
+      h('p', { class: 'small muted' }, 'Garten, Auffahrt, Garage, Durchgang drinnen & draußen – mit fertigen Aufgaben (Rasen mähen, fegen, …). Kannst du danach alles anpassen.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn sec', onclick: async () => { await S.store.upsertMany('tasks', missing); rain('🌳🌻🚗🔧'); toast(`${missing.length} Aufgaben für draußen dazu! 🌳`); await refresh(); } }, `➕ ${missing.length} Vorlagen hinzufügen`))));
+  } else {
+    const mine = S.tasks.filter(t => t.proposed_by === me.id);
+    wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '💡 Ideen?'),
+      h('p', { class: 'small muted' }, 'Fehlt eine Aufgabe oder ein Bereich (z.B. Garten, Garage)? Schlag sie vor!'),
+      mine.length ? h('p', { class: 'small' }, `Warten auf OK: ${mine.map(t => t.title).join(', ')} ⏳`) : null,
+      h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => taskDialog(null) }, '💡 Aufgabe vorschlagen'))));
   }
   wrap.append(emojiCard(me));
   wrap.append(h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '📱 App aufs Handy'),
@@ -750,10 +821,15 @@ function memberDialog(m) {
 }
 
 function taskDialog(t) {
+  const admin = !!meM()?.is_admin;
   const isNew = !t; t = t ? { ...t } : { id: uid(), title: '', room: 'Wohnzimmer', freq: 'daily', day: 1, minutes: 5, leicht: false, per_person: false, active: true };
   const title = h('input', { type: 'text', value: t.title, placeholder: 'Was ist zu tun?' });
-  const roomList = [...new Set([...Object.keys(ROOM_ICON).filter(r => r !== 'Extra' && r !== 'Wäsche'), ...S.tasks.map(x => x.room)])];
-  const room = h('select', {}, roomList.map(r => h('option', { value: r, selected: t.room === r ? true : null }, `${roomIcon(r)} ${r}`)));
+  const room = h('select', {}, allRooms().map(r => h('option', { value: r, selected: t.room === r ? true : null }, `${roomIcon(r)} ${r}`)), h('option', { value: '__neu' }, '➕ Neuer Bereich…'));
+  room.onchange = async () => {
+    if (room.value !== '__neu') return;
+    const r = await roomDialog(); if (!r) { room.value = t.room; return; }
+    room.insertBefore(h('option', { value: r, selected: true }, `${roomIcon(r)} ${r}`), room.lastChild); room.value = r;
+  };
   const freq = h('select', {}, Object.entries(FREQ).map(([k, v]) => h('option', { value: k, selected: t.freq === k ? true : null }, v)));
   const dayW = h('select', {}, [1, 2, 3, 4, 5, 6, 7].map(i => h('option', { value: i, selected: +t.day === i ? true : null }, DAYS[i])));
   const dayM = h('input', { type: 'number', min: 1, max: 28, value: t.day || 1 });
@@ -764,21 +840,51 @@ function taskDialog(t) {
   const leicht = h('input', { type: 'checkbox', checked: t.leicht });
   const pp = h('input', { type: 'checkbox', checked: t.per_person });
   const active = h('input', { type: 'checkbox', checked: t.active });
-  const s = sheet(h('h2', {}, isNew ? 'Neue Aufgabe' : 'Aufgabe bearbeiten'),
+  const s = sheet(h('h2', {}, isNew ? (admin ? 'Neue Aufgabe' : '💡 Aufgabe vorschlagen') : 'Aufgabe bearbeiten'),
+    !admin ? h('p', { class: 'small muted' }, 'Dein Vorschlag geht an die Admins. Sobald er angenommen ist, taucht er bei allen auf 😊') : null,
     h('label', { class: 'f' }, 'Aufgabe'), title, h('label', { class: 'f' }, 'Raum'), room,
     h('label', { class: 'f' }, 'Wie oft?'), freq, dayBox,
     h('label', { class: 'f' }, 'Dauer ungefähr (Minuten) – 5 Min = 1 Punkt'), minutes,
     h('label', { class: 'chk' }, leicht, 'Leicht – können auch die Kleinen'),
     h('label', { class: 'chk' }, pp, 'Jeder macht das für sich (z.B. eigenes Zimmer)'),
-    h('label', { class: 'chk' }, active, 'Aktiv'),
+    admin ? h('label', { class: 'chk' }, active, 'Aktiv') : null,
     h('div', { class: 'actions' },
       h('button', { class: 'btn', onclick: async () => {
         if (!title.value.trim()) return title.focus();
         Object.assign(t, { title: title.value.trim(), room: room.value, freq: freq.value, day: freq.value === 'weekly' ? +dayW.value : freq.value === 'monthly' ? Math.min(28, Math.max(1, +dayM.value || 1)) : 0, minutes: Math.max(1, +minutes.value || 5), leicht: leicht.checked, per_person: pp.checked, active: active.checked });
-        await S.store.upsert('tasks', t); s.remove(); toast('Gespeichert 👍'); await refresh();
-      } }, 'Speichern'),
-      !isNew ? h('button', { class: 'btn ghost', onclick: async () => { if (!confirm('Aufgabe löschen?')) return; await S.store.remove('tasks', t.id); s.remove(); await refresh(); } }, 'Löschen') : null));
+        if (!admin) { t.active = false; t.proposed_by = S.me; }
+        try { await S.store.upsert('tasks', t); } catch (e) { return toast('Hat nicht geklappt: ' + (e.message || e)); }
+        s.remove(); toast(admin ? 'Gespeichert 👍' : 'Vorschlag ist raus! 💡 Danke!'); await refresh();
+      } }, admin ? 'Speichern' : 'Vorschlagen 💡'),
+      !isNew && admin ? h('button', { class: 'btn ghost', onclick: async () => { if (!confirm('Aufgabe löschen?')) return; await S.store.remove('tasks', t.id); s.remove(); await refresh(); } }, 'Löschen') : null));
 }
+
+function roomDialog() {
+  return new Promise(resolve => {
+    const name = h('input', { type: 'text', placeholder: 'z.B. Gartenhaus, Keller, Balkon' });
+    const emo = h('input', { type: 'text', value: '🏡', maxlength: 4, style: 'width:80px' });
+    let ok = false;
+    const s = sheet(h('h2', {}, '➕ Neuer Bereich'),
+      h('div', { class: 'row' }, h('div', {}, h('label', { class: 'f' }, 'Emoji'), emo), h('div', { class: 'grow' }, h('label', { class: 'f' }, 'Name'), name)),
+      h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: async () => {
+        const n = name.value.trim(); if (!n) return name.focus();
+        S.settings = { ...S.settings, rooms: { ...(S.settings.rooms || {}), [n]: emojis(emo.value)[0] || '🏡' } };
+        try { await S.store.saveSettings(S.settings); } catch {}
+        ok = true; s.remove(); resolve(n);
+      } }, 'Hinzufügen')));
+    new MutationObserver((_, o) => { if (!s.isConnected) { o.disconnect(); if (!ok) resolve(null); } }).observe(document.body, { childList: true });
+    setTimeout(() => name.focus(), 50);
+  });
+}
+const OUTDOOR = [
+  ['garten-rasen', 'Rasen mähen', 'Garten', 'weekly', 6, 30],
+  ['garten-laub', 'Laub rechen & Gartenmüll weg', 'Garten', 'weekly', 6, 20],
+  ['garten-unkraut', 'Unkraut zupfen', 'Garten', 'monthly', 10, 30],
+  ['auffahrt-fegen', 'Auffahrt fegen', 'Auffahrt', 'weekly', 6, 15],
+  ['garage-ordnen', 'Garage aufräumen & fegen', 'Garage', 'monthly', 14, 30],
+  ['durch-drin', 'Durchgang drinnen saugen & wischen', 'Durchgang drinnen', 'weekly', 3, 10],
+  ['durch-draussen', 'Durchgang draußen fegen', 'Durchgang draußen', 'weekly', 5, 10],
+].map(([id, title, room, freq, day, minutes]) => ({ id, title, room, freq, day, minutes, leicht: false, per_person: false, active: true }));
 
 // ---------- Login ----------
 function viewWho() {

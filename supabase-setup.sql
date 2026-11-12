@@ -25,6 +25,8 @@ create table if not exists public.members (
   pin_hash text, sort int default 0, rain text
 );
 alter table public.members add column if not exists rain text;
+alter table public.tasks add column if not exists proposed_by text;
+alter table public.completions add column if not exists helpers text;
 create table if not exists public.tasks (
   id text primary key, title text, room text, freq text, day int default 0, minutes int default 5,
   leicht boolean default false, per_person boolean default false, active boolean default true
