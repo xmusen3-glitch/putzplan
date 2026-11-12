@@ -55,7 +55,7 @@ const DEFAULT_PTS = { 'eing-aufr': 2, 'eing-schuhe': 1, 'eing-ranzen': 1, 'eing-
   'boden-saugen': 4, 'boden-wischen': 4, 'k-sm-aus': 3, 'k-sm-ein': 3, 'k-flaechen': 3, 'k-muell-sort': 3, 'k-muell-raus': 3, 'k-boden': 4, 'k-kuehl': 5,
   'gb-becken': 2, 'gb-wc': 4, 'gb-eimer': 2, 'gb-auff': 1, 'gb-fliesen': 3, 'gb-dusche': 5, 'spinnweben': 4, 'fenster': 5, 'zimmer': 5, 'wasch': 2,
   'garten-rasen': 6, 'garten-laub': 4, 'garten-unkraut': 5, 'auffahrt-fegen': 3, 'garage-ordnen': 5, 'durch-drin': 3, 'durch-draussen': 2 };
-const ptsOf = t => (t?.points != null && t.points !== '' ? +t.points : DEFAULT_PTS[t?.id] ?? ptsOf(t));
+const ptsOf = t => (t?.points != null && t.points !== '' ? +t.points : DEFAULT_PTS[t?.id] ?? ptsFor(t?.minutes));
 const LS = {
   get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
@@ -437,7 +437,8 @@ function render() {
     h('h1', {}, { heute: 'Heute 🧹', punkte: 'Punkte 🏆', verlauf: 'Wer hat was gemacht 👀', mehr: 'Mehr ⚙️' }[S.tab]),
     h('span', { class: 'pill' }, me.emoji, ' ', me.name),
     S.conf.mode === 'demo' ? h('span', { class: 'pill', title: 'Nur auf diesem Handy' }, 'Demo') : null));
-  app.append(views[S.tab]());
+  try { app.append(views[S.tab]()); }
+  catch (e) { console.error(e); app.append(h('div', { class: 'card', style: 'border:2px solid var(--bad)' }, h('b', {}, '😕 Hier ist was schiefgelaufen'), h('p', { class: 'small' }, h('code', {}, String(e?.message || e))), h('p', { class: 'small muted' }, 'Screenshot an Claude schicken 📸'), h('button', { class: 'btn', onclick: () => location.reload() }, '🔄 Neu laden'))); }
   const tab = (k, e, l) => h('button', { class: S.tab === k ? 'on' : '', onclick: () => { S.tab = k; render(); scrollTo(0, 0); } }, h('b', {}, e), l);
   document.body.append(h('nav', { class: 'tabs' }, tab('heute', '🧹', 'Heute'), tab('punkte', '🏆', 'Punkte'), tab('verlauf', '📸', 'Verlauf'), tab('mehr', '⚙️', 'Mehr')));
 }
