@@ -1,7 +1,9 @@
 // Familien-Putzplan – Vorher/Nachher-Fotos, faire Verteilung, Punkte.
 // Zwei Speicher: "demo" (nur dieses Handy) und "cloud" (Supabase, ganze Familie).
 
-const SUPABASE_ESM = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+function loadScript(src) {
+  return new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Konnte ' + src + ' nicht laden')); document.head.append(s); });
+}
 
 // ---------- kleine Helfer ----------
 const $ = (s, el = document) => el.querySelector(s);
@@ -154,7 +156,8 @@ const DemoStore = {
 const CloudStore = {
   name: 'cloud', sb: null,
   async init(conf) {
-    const { createClient } = await import(SUPABASE_ESM);
+    await loadScript('vendor/supabase.js');
+    const { createClient } = window.supabase;
     this.sb = createClient(conf.u, conf.k, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { 'x-familie': conf.f } } });
   },
   _e(r) { if (r.error) { console.error(r.error); throw r.error; } return r.data; },
@@ -713,7 +716,7 @@ function inviteDialog() {
     h('div', { class: 'actions' },
       navigator.share ? h('button', { class: 'btn big', onclick: () => navigator.share({ title: 'Unser Putzplan 🧹', text: 'Hier ist unser Familien-Putzplan! Öffnen, Namen antippen, PIN festlegen 😊', url: link }).catch(() => {}) }, '📤 Link teilen') : null,
       h('button', { class: 'btn sec big', onclick: async () => { try { await navigator.clipboard.writeText(link); toast('Link kopiert 📋'); } catch { prompt('Link kopieren:', link); } } }, '📋 Link kopieren')));
-  try { new window.QRCode(qr, { text: link, width: 220, height: 220, correctLevel: window.QRCode.CorrectLevel.L }); } catch { qr.remove(); }
+  loadScript('vendor/qrcode.js').then(() => { const q = window.qrcode(0, 'L'); q.addData(link); q.make(); qr.innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); qr.firstChild.style.cssText = 'width:240px;height:240px;display:block'; }).catch(() => qr.remove());
 }
 
 function memberDialog(m) {
@@ -825,7 +828,11 @@ function viewWelcome() {
   const f = h('input', { type: 'text', placeholder: 'Familien-Geheimcode aus dem SQL-Skript' });
   wrap.append(h('div', { class: 'big-emoji' }, '🏠🧹✨'), h('h1', { class: 'center', style: 'margin:0' }, 'Familien-Putzplan'),
     h('p', { class: 'center muted' }, 'Vorher-Foto, putzen, Nachher-Foto, Haken dran. Keine Ausreden mehr 😎'),
-    h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, 'Du hast einen Einladungslink?'), h('p', { class: 'small muted' }, 'Dann öffne einfach den Link aus WhatsApp – fertig!')),
+    h('div', { class: 'card' }, h('div', { style: 'font-weight:700' }, '📲 Du hast einen Einladungslink?'), h('p', { class: 'small muted' }, 'Öffne ihn einfach – oder kopier ihn und füg ihn hier ein:'),
+      (() => { const inp = h('input', { type: 'text', placeholder: 'Einladungslink hier einfügen' }); return h('div', {}, inp, h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => {
+        const mm = inp.value.match(/join=([\w-]+)/); if (!mm || !applyJoin(mm[1])) return toast('Das ist kein gültiger Einladungslink 🤔');
+        history.replaceState(null, '', location.pathname + '#join=' + mm[1]); connect(S.conf);
+      } }, 'Los geht\'s 🚀'))); })()),
     h('details', { class: 'card' }, h('summary', {}, '👑 Familie einrichten (nur Admin, einmalig)'),
       h('label', { class: 'f' }, 'Supabase Project URL'), u, h('label', { class: 'f' }, 'Supabase API Key (anon/publishable)'), k, h('label', { class: 'f' }, 'Familien-Geheimcode'), f,
       h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: () => { if (!u.value || !k.value || !f.value) return toast('Bitte alle 3 Felder ausfüllen 🙂'); connect({ mode: 'cloud', u: u.value.trim().replace(/\/$/, ''), k: k.value.trim(), f: f.value.trim() }); } }, 'Verbinden'))),
@@ -875,18 +882,21 @@ async function cleanupPhotos() {
   }
 }
 
+function applyJoin(code) {
+  try {
+    const j = JSON.parse(b64d(code));
+    if (!j.u || !j.k || !j.f) return false;
+    const conf = { mode: 'cloud', u: j.u, k: j.k, f: j.f };
+    if (!S.conf || S.conf.f !== conf.f) { LS.del('pp_me'); S.me = null; }
+    S.conf = conf; LS.set('pp_conf', conf);
+    return true;
+  } catch { return false; }
+}
 // ---------- Start ----------
 (async function boot() {
+  // Der Link bleibt in der Adresse, damit "Zum Home-Bildschirm" ihn mitnimmt (iPhone-Apps haben eigenen Speicher)
   const m = location.hash.match(/join=([\w-]+)/);
-  if (m) {
-    try {
-      const j = JSON.parse(b64d(m[1]));
-      const conf = { mode: 'cloud', u: j.u, k: j.k, f: j.f };
-      if (!S.conf || S.conf.f !== conf.f) { LS.del('pp_me'); S.me = null; }
-      S.conf = conf; LS.set('pp_conf', conf);
-    } catch { toast('Der Einladungslink ist kaputt 😕'); }
-    history.replaceState(null, '', location.pathname);
-  }
+  if (m && !applyJoin(m[1])) toast('Der Einladungslink ist kaputt 😕');
   if (S.conf) await connect(S.conf); else render();
   setInterval(() => { if (S.store && document.visibilityState === 'visible') refresh(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (S.store && document.visibilityState === 'visible') refresh(); });
