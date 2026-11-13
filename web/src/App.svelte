@@ -24,7 +24,7 @@
   const VIEWS = { uebersicht: Overview, heute: Today, fotos: Photos, rang: Rank, ich: Me, verwaltung: Admin };
   const items = $derived(NAV.filter(n => !n.admin || G.admin));
   const View = $derived(VIEWS[items.some(n => n.id === S.tab) ? S.tab : 'heute']);
-  const badge = $derived(G.admin ? G.queue.length + G.proposals.length : 0);
+  const badge = $derived(G.admin ? G.queue.length + G.proposals.length + G.pinHelp.length : 0);
   const go = id => { S.tab = id; scrollTo(0, 0); };
 
   // Durchsagen kommen bei offenen Apps sofort als Meldung an

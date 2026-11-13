@@ -44,10 +44,22 @@ on('POST', '/api/login', 'device', ({ body, sess }) => {
     const c = checkPin(m, pin);
     if (!c.ok) { guard.miss(); throw new Fail(401, 'Falsche PIN'); }
     if (c.old) patch('members', m.id, { pin_hash: hashPin(pin) });
+    if (m.pin_help) { patch('members', m.id, { pin_help: null }); emit('members', row('members', m.id)); } // PIN ist wieder eingefallen
   }
   guard.hit();
   q.run('update sessions set member_id = ? where id = ?', m.id, sess.id);
   return { me: m.id };
+});
+/** „PIN vergessen“ auf dem Anmeldeschirm: sagt den Admins Bescheid. Zurücksetzen können nur sie. */
+const helpAsked = new Map();
+on('POST', '/api/pin-help', 'device', ({ body }) => {
+  const m = member(body.member_id);
+  if (!m.active || !m.pin_hash) throw new Fail(400, 'Hier gibt es nichts zurückzusetzen');
+  if (Date.now() - (helpAsked.get(m.id) || 0) < 10 * 60e3) return; // nicht öfter als alle 10 Minuten Bescheid geben
+  helpAsked.set(m.id, Date.now());
+  patch('members', m.id, { pin_help: now() });
+  notify(admins().filter(a => a !== m.id), 'PIN vergessen', `${m.name} braucht eine neue PIN. In der Übersicht zurücksetzen.`);
+  emit('members', row('members', m.id));
 });
 on('POST', '/api/logout', 'device', ({ sess }) => { q.run('update sessions set member_id = null where id = ?', sess.id); });
 on('POST', '/api/leave', 'device', ({ sess, res }) => { endSession(sess, res); });
@@ -60,7 +72,16 @@ on('GET', '/api/state', 'member', ({ me }) => {
     reactions: q.all('select * from reactions where created_at >= ?', since40()).filter(r => ids.has(r.entry_id)),
     log: me.role === 'admin' ? q.all('select * from log order by id desc limit 150').map(r => out('log', r)) : [],
     push_key: publicKey,
+    older: !!q.get("select 1 as x from entries where created_at < ? and status = 'done' limit 1", since40()),
   };
+});
+/** Ältere Fotos nachladen: alles, was vor dem geladenen Zeitraum (oder vor „before“) erledigt wurde. */
+on('GET', '/api/history', 'member', ({ url }) => {
+  const before = url.searchParams.get('before'), cut = since40();
+  const entries = q.all(`select * from entries where created_at < ? and status = 'done' and task_id not in ('bonus', 'warn', 'frei', 'redeem') order by created_at desc limit 31`, before && before < cut ? before : cut).map(r => out('entries', r));
+  const page = entries.slice(0, 30);
+  const reactions = page.length ? q.all(`select * from reactions where entry_id in (${page.map(() => '?').join(',')})`, ...page.map(e => e.id)) : [];
+  return { entries: page, reactions, more: entries.length > 30 };
 });
 on('GET', '/api/events', 'member', ({ req, res, me }) => { openStream(req, res, me); return STREAM; });
 
@@ -344,7 +365,7 @@ on('DELETE', '/api/members/:id', 'admin', ({ p, me }) => {
 });
 on('POST', '/api/members/:id/reset-pin', 'admin', ({ p, me }) => {
   const m = member(p.id);
-  patch('members', m.id, { pin_hash: null });
+  patch('members', m.id, { pin_hash: null, pin_help: null });
   if (m.id !== me.id) { q.run('update sessions set member_id = null where member_id = ?', m.id); dropStreams(m.id); }
   addLog(me, `hat die PIN von ${m.name} zurückgesetzt`);
   emit('members', row('members', m.id));
@@ -353,7 +374,7 @@ on('PUT', '/api/settings', 'admin', ({ body, me }) => {
   const s = settings(), rooms = {};
   for (const [k, v] of Object.entries(body.rooms && typeof body.rooms === 'object' ? body.rooms : s.rooms || {}).slice(0, 60)) rooms[str(k, 40)] = str(v, 30);
   const next = {
-    min_minutes: int(body.min_minutes, 0, 60, s.min_minutes), tagesziel: int(body.tagesziel, 1, 50, s.tagesziel), foto_tage: int(body.foto_tage, 3, 365, s.foto_tage),
+    min_minutes: int(body.min_minutes, 0, 60, s.min_minutes), tagesziel: int(body.tagesziel, 1, 50, s.tagesziel),
     koch_regel: body.koch_regel ?? s.koch_regel ? true : false, review_first: body.review_first ?? s.review_first ? true : false, erinnerung: body.erinnerung ?? s.erinnerung ? true : false, rooms,
   };
   setMeta('settings', next);

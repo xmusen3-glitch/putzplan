@@ -22,7 +22,7 @@ export const DAYS_SHORT = ['', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 export const FREQ = { daily: 'täglich', weekdays: 'Mo–Fr', weekly: '1x pro Woche', monthly: '1x im Monat', weekend: 'am Wochenende' };
 export const ROLES = { admin: 'Admin', mitglied: 'Mitglied', kind: 'Kind' };
 export const REACTS = ['❤️', '👏', '😍', '🔥', '😂', '🤢', '🙈'];
-export const DEFAULT_SETTINGS = { min_minutes: 2, koch_regel: true, foto_tage: 21, tagesziel: 10, review_first: false, erinnerung: true, rooms: {} };
+export const DEFAULT_SETTINGS = { min_minutes: 2, koch_regel: true, tagesziel: 10, review_first: false, erinnerung: true, rooms: {} };
 export const DEFAULT_RAIN = '🎉✨⭐🧽💪🌈';
 
 // Einträge ohne echte Aufgabe dahinter

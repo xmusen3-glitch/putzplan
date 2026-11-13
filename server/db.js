@@ -34,9 +34,12 @@ db.exec(`
   create table if not exists sessions (id text primary key, member_id text, created_at text, last_seen text);
   create table if not exists log (id integer primary key autoincrement, at text, member_id text, text text, undo text, undone integer default 0);
 `);
+// Spalten, die später dazugekommen sind
+const hasCol = (table, col) => db.prepare(`pragma table_info(${table})`).all().some(r => r.name === col);
+if (!hasCol('members', 'pin_help')) db.exec('alter table members add column pin_help text'); // Zeitpunkt von „PIN vergessen“
 
 const COLS = {
-  members: ['id', 'name', 'emoji', 'role', 'w_weekday', 'w_weekend', 'waschtag', 'active', 'pin_hash', 'sort', 'rain', 'titel', 'away_from', 'away_to'],
+  members: ['id', 'name', 'emoji', 'role', 'w_weekday', 'w_weekend', 'waschtag', 'active', 'pin_hash', 'sort', 'rain', 'titel', 'away_from', 'away_to', 'pin_help'],
   tasks: ['id', 'title', 'room', 'freq', 'day', 'minutes', 'points', 'leicht', 'per_person', 'active', 'proposed_by'],
   entries: ['id', 'task_id', 'title', 'member_id', 'period', 'slot', 'status', 'before_photo', 'before_at', 'after_photo', 'after_at', 'points', 'note', 'helpers', 'created_by', 'created_at', 'review', 'review_note'],
   reactions: ['id', 'entry_id', 'member_id', 'emoji', 'text', 'created_at'],

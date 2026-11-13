@@ -3,17 +3,26 @@
   import Icon from '../parts/Icon.svelte';
   import Pair from '../parts/Pair.svelte';
   import Reactions from '../parts/Reactions.svelte';
-  import { S, G, mem, mName } from '../lib/store.svelte.js';
-  import { open } from '../lib/ui.svelte.js';
+  import { S, G, mem, mName, loadOlder } from '../lib/store.svelte.js';
+  import { open, tryDo } from '../lib/ui.svelte.js';
   import Review from '../sheets/Review.svelte';
 
-  let who = $state('alle'), limit = $state(20);
+  let who = $state('alle'), limit = $state(20), loading = $state(false);
   const when = e => e.after_at || e.before_at || e.created_at || '';
-  const all = $derived(S.entries
-    .filter(e => (e.status === 'done' || e.status === 'started') && !L.ADMIN_KINDS.has(e.task_id) && (who === 'alle' || L.involved(e, who)))
-    .sort((a, b) => when(b).localeCompare(when(a))));
+  // Erst die letzten Wochen aus dem geladenen Zustand, dahinter alles, was nachgeladen wurde. Fotos bleiben dauerhaft.
+  const all = $derived.by(() => {
+    const seen = new Set();
+    return [...S.entries, ...S.older]
+      .filter(e => !seen.has(e.id) && seen.add(e.id) && (e.status === 'done' || e.status === 'started') && !L.ADMIN_KINDS.has(e.task_id) && (who === 'alle' || L.involved(e, who)))
+      .sort((a, b) => when(b).localeCompare(when(a)));
+  });
   const yesterday = $derived(L.dKey(L.noon(G.calc.d, 1)));
-  const dayLabel = iso => { const d = new Date(iso), k = L.dKey(d); return k === G.calc.today ? 'Heute' : k === yesterday ? 'Gestern' : `${L.DAYS[L.isoDay(d)]}, ${d.getDate()}.${d.getMonth() + 1}.`; };
+  const dayLabel = iso => { const d = new Date(iso), k = L.dKey(d); return k === G.calc.today ? 'Heute' : k === yesterday ? 'Gestern' : `${L.DAYS[L.isoDay(d)]}, ${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear() === G.calc.d.getFullYear() ? '' : d.getFullYear()}`; };
+  async function older() {
+    loading = true;
+    if (await tryDo(loadOlder)) limit += 30;
+    loading = false;
+  }
   /** Einträge nach Tag gruppiert, damit jede Gruppe eine Überschrift bekommt. */
   const groups = $derived.by(() => {
     const out = [];
@@ -60,4 +69,8 @@
     <p class="empty wide">Noch keine Fotos. Zeit, das zu ändern!</p>
   {/each}
 </div>
-{#if all.length > limit}<button class="btn sec wide" onclick={() => (limit += 20)}>Mehr anzeigen ({all.length - limit})</button>{/if}
+{#if all.length > limit}
+  <button class="btn sec wide" onclick={() => (limit += 20)}>Mehr anzeigen ({all.length - limit})</button>
+{:else if S.olderMore}
+  <button class="btn sec wide" disabled={loading} onclick={older}><Icon name="history" size={16} />{loading ? 'Lädt …' : 'Ältere Fotos laden'}</button>
+{/if}

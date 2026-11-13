@@ -8,7 +8,7 @@ V2 läuft auf einem eigenen Server: ein Node-Dienst liefert die App aus, prüft 
 
 | Ordner | Inhalt |
 |---|---|
-| `server/` | Dienst: Anfragen (`api.js`), Datenbank und Fotos (`db.js`), Anmeldung und Live-Kanal (`core.js`), Push und Wecker (`push.js`), Umzug aus V1 (`migrate-v1.js`) |
+| `server/` | Dienst: Anfragen (`api.js`), Datenbank und Fotos (`db.js`), Anmeldung und Live-Kanal (`core.js`), Push und Wecker (`push.js`), Umzug aus V1 (`migrate-v1.js`), Helfer für die Konsole (`invite.js`, `reset-pin.js`) |
 | `shared/logic.js` | Regeln, die Server und App teilen: Fälligkeit, Punkte, Serie, Konto |
 | `web/` | Die App (Svelte, Vite). Ansichten in `src/views`, Dialoge in `src/sheets` |
 | `data/` | Datenbank und Fotos (wird beim ersten Start angelegt, nicht im Repo) |
@@ -52,4 +52,18 @@ In Cloudflare genügt der normale Proxy. Fotos und Daten werden dort nicht zwisc
 - Der Einladungslink enthält nur einen Beitritts-Code. Damit sieht ein Gerät die Namen und kann eine PIN versuchen, mehr nicht.
 - PINs prüft der Server (scrypt), nach fünf Fehlversuchen ist fünf Minuten Pause.
 - Was Admin, Mitglied und Kind dürfen, entscheidet der Server. Punkte vergibt er selbst.
-- Fotos sind nur mit Anmeldung abrufbar und werden nach der eingestellten Zeit gelöscht.
+- Fotos sind nur mit Anmeldung abrufbar und bleiben dauerhaft gespeichert. Die App zeigt die letzten Wochen sofort, ältere lädt sie unter „Fotos“ nach.
+
+## PIN vergessen
+
+Auf dem Anmeldeschirm gibt es unter dem Ziffernfeld „PIN vergessen?“. Das meldet sich bei den Admins: in der Übersicht steht dann „PIN vergessen: Name“, ein Tipp setzt die PIN zurück. Danach legt die Person beim nächsten Öffnen eine neue fest. Admins können eine PIN auch jederzeit über die Person zurücksetzen.
+
+Hat die einzige Admin-Person ihre PIN vergessen, hilft der Befehl am Server:
+
+```bash
+docker exec putzplan node server/reset-pin.js Dorina
+```
+
+## Speicherplatz
+
+Weil Fotos nicht mehr gelöscht werden, wächst der Ordner `data/photos`. Grob gerechnet: zwei Fotos je Aufgabe mit zusammen etwa 0,4 MB, bei 30 Aufgaben am Tag sind das rund 4 bis 5 GB im Jahr. Der Ordner gehört in die Sicherung.

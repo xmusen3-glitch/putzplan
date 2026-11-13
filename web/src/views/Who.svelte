@@ -1,13 +1,23 @@
 <script>
   // Person antippen, PIN eingeben. Ohne PIN wird beim ersten Mal eine festgelegt. Geprüft wird am Server.
   import Icon from '../parts/Icon.svelte';
-  import { S, login, leave } from '../lib/store.svelte.js';
+  import { S, api, login, leave } from '../lib/store.svelte.js';
   import { toast } from '../lib/ui.svelte.js';
   let who = $state.raw(null), pin = $state(''), first = $state(''), busy = $state(false), shake = $state(false);
-  let msg = $state('');
+  let msg = $state(''), asked = $state(false);
   const fresh = $derived(who && !who.has_pin);
 
-  function pick(m) { who = m; pin = ''; first = ''; msg = m.has_pin ? 'Deine PIN bitte' : 'Leg deine geheime 4-stellige PIN fest'; }
+  /** Aktuellen Stand holen: hat inzwischen jemand die PIN zurückgesetzt? */
+  async function refresh() {
+    const s = await api('GET', '/session').catch(() => null);
+    if (s?.members) S.picker = s.members;
+    return S.picker;
+  }
+  async function pick(m) {
+    who = (await refresh()).find(x => x.id === m.id) || m;
+    pin = ''; first = ''; asked = false;
+    msg = who.has_pin ? 'Deine PIN bitte' : 'Leg deine geheime 4-stellige PIN fest';
+  }
   async function press(k) {
     if (busy) return;
     pin = k === 'del' ? pin.slice(0, -1) : pin.length < 4 ? pin + k : pin;
@@ -24,6 +34,23 @@
     if (/^\d$/.test(e.key)) press(e.key);
     else if (e.key === 'Backspace') press('del');
   }
+  async function forgot() {
+    if (!confirm(`Den Admins Bescheid geben, dass ${who.name} eine neue PIN braucht?`)) return;
+    try {
+      await api('POST', '/pin-help', { member_id: who.id });
+      asked = true; pin = '';
+      msg = 'Die Admins wissen Bescheid. Sobald sie deine PIN zurückgesetzt haben, legst du hier eine neue fest.';
+    } catch (e) { msg = e.message; }
+  }
+  // Nach dem Hilferuf nachsehen, ob die PIN schon zurückgesetzt wurde
+  $effect(() => {
+    if (!asked) return;
+    const t = setInterval(async () => {
+      const m = (await refresh()).find(x => x.id === who?.id);
+      if (m && !m.has_pin) { who = m; asked = false; pin = ''; first = ''; msg = 'Deine PIN wurde zurückgesetzt. Leg jetzt eine neue fest:'; }
+    }, 5000);
+    return () => clearInterval(t);
+  });
 </script>
 
 <svelte:window onkeydown={key} />
@@ -48,6 +75,9 @@
       <button onclick={() => press('0')}>0</button>
       <button onclick={() => press('del')} aria-label="Löschen"><Icon name="delete" size={24} /></button>
     </div>
-    <button class="link" style="margin-top:20px" onclick={() => (who = null)}><Icon name="arrow-left" size={14} />Zurück</button>
+    <div class="row" style="justify-content:center;gap:18px;margin-top:20px">
+      <button class="link" onclick={() => (who = null)}><Icon name="arrow-left" size={14} />Zurück</button>
+      {#if who.has_pin && !asked}<button class="link" onclick={forgot}><Icon name="key-round" size={14} />PIN vergessen?</button>{/if}
+    </div>
   {/if}
 </div>

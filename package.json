@@ -9,7 +9,8 @@
     "build": "vite build",
     "start": "node server/index.js",
     "umzug": "node server/migrate-v1.js",
-    "einladung": "node server/invite.js"
+    "einladung": "node server/invite.js",
+    "pin": "node server/reset-pin.js"
   },
   "engines": {
     "node": ">=24"

@@ -5,6 +5,7 @@
   import { S, G } from '../lib/store.svelte.js';
   import { open } from '../lib/ui.svelte.js';
   import { roomOf } from '../lib/rooms.js';
+  import { resetPin } from '../lib/act.js';
   import Review from '../sheets/Review.svelte';
   import Proposals from '../sheets/Proposals.svelte';
   import Late from '../sheets/Late.svelte';
@@ -18,6 +19,7 @@
   const runningEntries = $derived(S.entries.filter(e => e.status === 'started'));
   const fixing = $derived(S.entries.filter(e => e.status === 'done' && e.review === 'nach').length);
   const inbox = $derived([
+    ...G.pinHelp.map(m => ({ icon: 'key-round', c: 'info', title: `PIN vergessen: ${m.name}`, sub: 'Antippen zum Zurücksetzen', go: () => resetPin(m) })),
     G.queue.length && { icon: 'eye', c: 'brand', title: 'Fotos prüfen', sub: `${G.queue.length} neue Vorher/Nachher-Paare`, go: () => open(Review) },
     G.proposals.length && { icon: 'lightbulb', c: 'warn', title: 'Vorschläge', sub: `${G.proposals.length} neue Aufgaben-Ideen`, go: () => open(Proposals) },
     G.late.length && { icon: 'hourglass', c: 'bad', title: 'Liegengeblieben', sub: `${G.late.length} ${G.late.length === 1 ? 'Aufgabe wartet' : 'Aufgaben warten'} schon länger`, go: () => open(Late) },

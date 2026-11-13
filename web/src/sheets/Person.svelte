@@ -3,8 +3,9 @@
   import * as L from '../../../shared/logic.js';
   import Icon from '../parts/Icon.svelte';
   import Head from '../parts/Head.svelte';
-  import { S, G, mem, post } from '../lib/store.svelte.js';
-  import { open, toast, tryDo } from '../lib/ui.svelte.js';
+  import { S, G, mem } from '../lib/store.svelte.js';
+  import { open } from '../lib/ui.svelte.js';
+  import { resetPin } from '../lib/act.js';
   import Action from './Action.svelte';
   import MemberEdit from './MemberEdit.svelte';
   import Points from './Points.svelte';
@@ -13,9 +14,6 @@
   const today = $derived(S.entries.filter(e => L.involved(e, id) && !L.ADMIN_KINDS.has(e.task_id) && ((e.status === 'done' && L.dKey(new Date(e.after_at)) === G.calc.today) || e.status === 'started' || e.status === 'todo')));
   const time = iso => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   const act = kind => open(Action, { kind, member: id });
-  async function resetPin() {
-    if (confirm(`PIN von ${m.name} zurücksetzen? Beim nächsten Öffnen legt ${m.name} eine neue fest.`) && (await tryDo(() => post(`/members/${id}/reset-pin`)))) toast('PIN zurückgesetzt');
-  }
 </script>
 
 {#if m && p}
@@ -47,5 +45,9 @@
     <button class="btn sec" onclick={() => open(Points, { member: m })}><Icon name="history" size={16} />Alle Punkte</button>
     <button class="btn sec" onclick={() => open(MemberEdit, { member: m })}><Icon name="pencil" size={16} />Bearbeiten</button>
   </div>
-  {#if m.has_pin}<button class="link" style="margin-top:10px" onclick={resetPin}><Icon name="key-round" size={14} />PIN zurücksetzen</button>{/if}
+  {#if m.has_pin}
+    <button class="btn wide {m.pin_help ? 'warn' : 'sec'}" style="margin-top:10px" onclick={() => resetPin(m)}><Icon name="key-round" size={16} />{m.pin_help ? 'PIN vergessen: jetzt zurücksetzen' : 'PIN zurücksetzen'}</button>
+  {:else}
+    <p class="hint">Noch keine PIN. {m.name} legt beim nächsten Öffnen der App eine fest.</p>
+  {/if}
 {/if}

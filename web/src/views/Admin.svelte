@@ -24,7 +24,7 @@
 
   // Regeln: erst lokal ändern, dann speichern
   let rules = $state({ ...S.settings });
-  const dirty = $derived(['tagesziel', 'min_minutes', 'foto_tage', 'review_first', 'koch_regel', 'erinnerung'].some(k => rules[k] !== S.settings[k]));
+  const dirty = $derived(['tagesziel', 'min_minutes', 'review_first', 'koch_regel', 'erinnerung'].some(k => rules[k] !== S.settings[k]));
   const saveRules = async () => (await tryDo(() => put('/settings', rules))) && toast('Regeln gespeichert');
 
   const stamp = iso => { const d = new Date(iso); return d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' }) + ' ' + d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }); };
@@ -74,6 +74,7 @@
           <span class="grow">
             <b>{m.name}</b> <span class="chip c-brand">{L.ROLES[m.role]}</span>
             {#if !m.active}<span class="chip">pausiert</span>{:else if m.away_from && m.away_to >= G.calc.today}<span class="chip c-info">abwesend {day(m.away_from)} bis {day(m.away_to)}</span>{/if}
+            {#if m.pin_help}<span class="chip c-warn"><Icon name="key-round" size={14} />PIN vergessen</span>{/if}
             <small>{info(m)}{m.has_pin ? '' : ' · noch keine PIN'}</small>
           </span>
           <Icon name="chevron-right" />
@@ -88,7 +89,7 @@
     <section class="card list">
       <div class="row"><span class="icb"><Icon name="target" /></span><span class="grow"><b>Tagesziel</b><small>Punkte für eine Person mit normalem Pensum</small></span><input class="inp num-in" type="number" min="1" max="50" bind:value={rules.tagesziel} /></div>
       <div class="row"><span class="icb"><Icon name="timer" /></span><span class="grow"><b>Mindestzeit zwischen den Fotos</b><small>in Minuten</small></span><input class="inp num-in" type="number" min="0" max="60" bind:value={rules.min_minutes} /></div>
-      <div class="row"><span class="icb"><Icon name="image" /></span><span class="grow"><b>Fotos behalten</b><small>in Tagen, danach werden sie gelöscht</small></span><input class="inp num-in" type="number" min="3" max="365" bind:value={rules.foto_tage} /></div>
+      <div class="row"><span class="icb"><Icon name="image" /></span><span class="grow"><b>Fotos bleiben dauerhaft gespeichert</b><small>Ältere lassen sich unter „Fotos“ nachladen</small></span><Icon name="infinity" /></div>
       <div class="row"><span class="icb"><Icon name="eye" /></span><span class="grow"><b>Punkte zählen erst nach dem Prüfen</b><small>Aus: Punkte gibt es sofort, Ablehnen nimmt sie wieder weg</small></span>{@render sw(rules.review_first, () => (rules.review_first = !rules.review_first), 'Punkte erst nach dem Prüfen')}</div>
       <div class="row"><span class="icb"><Icon name="cooking-pot" /></span><span class="grow"><b>Wer kocht, räumt auf</b><small>Knopf unter „Extra“</small></span>{@render sw(rules.koch_regel, () => (rules.koch_regel = !rules.koch_regel), 'Koch-Regel')}</div>
       <div class="row"><span class="icb"><Icon name="bell" /></span><span class="grow"><b>Erinnerung ans Tagesziel</b><small>um 17 Uhr, wenn noch Punkte fehlen</small></span>{@render sw(rules.erinnerung, () => (rules.erinnerung = !rules.erinnerung), 'Erinnerung')}</div>

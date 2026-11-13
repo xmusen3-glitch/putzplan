@@ -41,6 +41,11 @@ export async function join(e) {
   if (await tryDo(() => post(`/entries/${e.id}/join`))) { rain('🤝💪✨'); toast(`Du hilfst ${mName(e.member_id)} mit!`); }
 }
 export const dropEntry = e => confirm('Diese Aufgabe von der Liste nehmen?') && tryDo(() => del(`/entries/${e.id}`));
+/** Admins: PIN einer Person zurücksetzen. Sie legt beim nächsten Öffnen eine neue fest. */
+export async function resetPin(m) {
+  if (!confirm(`PIN von ${m.name} zurücksetzen? Beim nächsten Öffnen legt ${m.name} eine neue fest.`)) return;
+  if (await tryDo(() => post(`/members/${m.id}/reset-pin`))) toast(`PIN zurückgesetzt. ${m.name} kann jetzt eine neue festlegen.`);
+}
 export async function redeem() {
   let res;
   if (await tryDo(async () => { res = await post('/redeem'); })) { rain('💰🪙✨😎'); toast(`${res.amount} Punkte eingelöst. Tagesziel geschafft!`); }

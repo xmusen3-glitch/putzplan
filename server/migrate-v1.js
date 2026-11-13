@@ -96,7 +96,8 @@ for (const [i, c] of comps.entries()) {
 const ids = new Set(comps.map(c => c.id));
 for (const r of reactions) if (ids.has(r.completion_id)) save('reactions', { id: r.id, entry_id: r.completion_id, member_id: r.member_id, emoji: r.emoji ?? null, text: r.text ?? null, created_at: r.created_at });
 
-setMeta('settings', { ...DEFAULT_SETTINGS, ...settings(), min_minutes: old.min_minutes ?? 2, koch_regel: old.koch_regel !== false, foto_tage: old.foto_tage ?? 21, tagesziel: old.tagesziel ?? 10 });
+// Die Löschfrist für Fotos aus V1 wird nicht übernommen: in V2 bleiben Fotos dauerhaft.
+setMeta('settings', { ...DEFAULT_SETTINGS, ...settings(), min_minutes: old.min_minutes ?? 2, koch_regel: old.koch_regel !== false, tagesziel: old.tagesziel ?? 10 });
 
 console.log(`Umzug fertig: ${members.length} Personen, ${tasks.length} Aufgaben, ${comps.length} Einträge, ${reactions.length} Reaktionen, ${photos} Fotos${missing ? ` (${missing} Fotos gab es in V1 nicht mehr)` : ''}.`);
 console.log(`In der Datenbank: ${q.get('select count(*) as n from entries').n} Einträge, ${q.get('select count(*) as n from reactions').n} Reaktionen.`);

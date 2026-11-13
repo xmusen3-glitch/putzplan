@@ -1,7 +1,6 @@
-// Push-Benachrichtigungen und der stündliche Wecker (Waschtag, Tagesziel, alte Fotos löschen).
+// Push-Benachrichtigungen und der stündliche Wecker (Waschtag, Tagesziel).
 import * as webpush from 'web-push';
-import { q, getMeta, setMeta, logicState, patch, row, delPhoto } from './db.js';
-import { emit } from './core.js';
+import { q, getMeta, setMeta, logicState } from './db.js';
 import { isoDay, isAway, dayGoal, dayPoints, buildIndex } from '../shared/logic.js';
 
 let keys = getMeta('vapid');
@@ -34,19 +33,6 @@ function hourly(d) {
       if (goal > 0 && p < goal) notify(m.id, p === 0 ? 'Noch nichts gemacht heute?' : 'Fast geschafft!', `Noch ${goal - p} Punkte bis zu deinem Tagesziel. Such dir was aus!`);
     }
   }
-  if (h === 3) cleanupPhotos(st.settings);
-}
-
-/** Fotos nach der eingestellten Zeit löschen. Der Eintrag selbst bleibt. */
-export function cleanupPhotos(settings) {
-  const cutoff = new Date(Date.now() - (+settings.foto_tage || 21) * 864e5).toISOString();
-  const old = q.all('select id, before_photo, after_photo from entries where created_at < ? and (before_photo is not null or after_photo is not null) limit 500', cutoff);
-  for (const e of old) {
-    delPhoto(e.before_photo); delPhoto(e.after_photo);
-    patch('entries', e.id, { before_photo: null, after_photo: null });
-    emit('entries', row('entries', e.id));
-  }
-  if (old.length) console.log(`${old.length} Einträge: alte Fotos gelöscht`);
 }
 
 export function startJobs() {
