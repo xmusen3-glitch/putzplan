@@ -1,0 +1,18 @@
+# Putzplan hinter dem Nginx Proxy Manager: kein Port nach außen, der Proxy erreicht den Dienst als "putzplan:8080".
+services:
+  putzplan:
+    build: .
+    container_name: putzplan
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Berlin
+      # Kontaktadresse für die Push-Dienste von Apple und Google (Pflichtangabe)
+      PUSH_CONTACT: ${PUSH_CONTACT:-mailto:putzplan@example.com}
+    volumes:
+      - ./data:/data
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

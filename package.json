@@ -1,0 +1,27 @@
+{
+  "name": "putzplan",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Familien-Putzplan mit Vorher-Nachher-Fotos",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "umzug": "node server/migrate-v1.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "qrcode-generator": "^2.0.4",
+    "web-push": "^4.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "jpeg-js": "^0.4.4",
+    "lucide-static": "^1.72.0",
+    "svelte": "^5.57.3",
+    "vite": "^8.3.8"
+  }
+}
