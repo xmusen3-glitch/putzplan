@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-Die App läuft dann auf http://localhost:5173. Bei einer leeren Datenbank legt der Dienst eine Admin-Person und die Standard-Aufgaben an und schreibt den Einladungslink in die Konsole. In der Entwicklung gibt es in der Kamera einen Knopf „Testbild“, falls der Rechner keine Kamera hat.
+Die App läuft dann auf http://localhost:5173. Den Einladungslink dazu gibt `npm run einladung` aus. Bei einer leeren Datenbank legt der Dienst eine Admin-Person und die Standard-Aufgaben an und schreibt den Einladungslink in die Konsole. In der Entwicklung gibt es in der Kamera einen Knopf „Testbild“, falls der Rechner keine Kamera hat.
 
 ## Daten aus V1 holen
 

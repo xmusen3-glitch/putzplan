@@ -8,7 +8,8 @@
     "dev": "node scripts/dev.mjs",
     "build": "vite build",
     "start": "node server/index.js",
-    "umzug": "node server/migrate-v1.js"
+    "umzug": "node server/migrate-v1.js",
+    "einladung": "node server/invite.js"
   },
   "engines": {
     "node": ">=24"
