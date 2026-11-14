@@ -60,6 +60,14 @@ async function fetchPhoto(id) {
 const [members, tasks, comps, reactions, sets] = await Promise.all([all('members'), all('tasks'), all('completions'), all('reactions'), get('settings?select=data&id=eq.1')]);
 const old = sets[0]?.data || {};
 
+// Frische Installation: die Beispiel-Person "Admin" und die Standard-Aufgaben weichen den echten Daten.
+// Sobald es Einträge gibt (erneuter Umzug am Stichtag), bleibt alles stehen, was in V2 dazugekommen ist.
+if (members.length && q.get('select count(*) as n from entries').n === 0) {
+  q.run('delete from members');
+  q.run('delete from tasks');
+  q.run('delete from sessions');
+}
+
 for (const m of members) {
   save('members', {
     id: m.id, name: m.name, emoji: m.emoji || '🙂', role: m.is_admin ? 'admin' : m.klein ? 'kind' : 'mitglied',
