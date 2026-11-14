@@ -55,14 +55,22 @@
             <b>{e.title}</b>
             <small>{mName(e.member_id)}{e.helpers.length ? ' mit ' + e.helpers.map(mName).join(', ') : ''} · {#if e.status === 'done'}{time(e.after_at)} · {dur(e)} Min · +{e.points} P{:else}seit {time(e.before_at)}{/if}</small>
           </div>
-          {#if G.admin && e.status === 'done'}
-            <button class="chip c-{st[0]}" onclick={() => open(Review, { only: e.id })}><Icon name={st[1]} size={14} />{st[2]}</button>
-          {:else if e.status === 'started' || (e.review && L.involved(e, S.meId))}
+          {#if e.status === 'started' || G.admin || (e.review && L.involved(e, S.meId))}
             <span class="chip c-{st[0]}"><Icon name={st[1]} size={14} />{st[2]}</span>
           {/if}
         </div>
         <Pair entry={e} />
         {#if e.status === 'done'}<Reactions entry={e} />{/if}
+        {#if G.admin && e.status === 'done'}
+          <!-- Admins können jedes Urteil jederzeit ändern, auch bei schon Geprüftem -->
+          <div class="row" style="margin-top:10px;gap:8px">
+            {#if !e.review}
+              <button class="btn sm grow" onclick={() => open(Review, { only: e.id })}><Icon name="eye" size={16} />Prüfen</button>
+            {:else}
+              <button class="btn sec sm grow" onclick={() => open(Review, { only: e.id })}><Icon name="pencil" size={16} />Urteil ändern oder ablehnen</button>
+            {/if}
+          </div>
+        {/if}
       </article>
     {/each}
   {:else}

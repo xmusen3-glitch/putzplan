@@ -3,6 +3,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -282,6 +283,33 @@ test('Änderungen kommen sofort über den Live-Kanal, das Protokoll nur zu Admin
   assert.ok(a.events.some(e => e.t === 'log'));
   assert.ok(!m.events.some(e => e.t === 'log'));
   assert.ok(!JSON.stringify([a.events, m.events]).includes('pin_hash'));
+});
+
+test('Übergangstür: alte Geräte kommen mit dem V1-Geheimcode herein, aber nur solange sie offen ist', async () => {
+  const hash = createHash('sha256').update('altes-geheimnis').digest('hex');
+  const door = ms => db.prepare("insert into meta (key, value) values ('v1_door', ?) on conflict (key) do update set value = excluded.value").run(JSON.stringify({ hash, until: new Date(Date.now() + ms).toISOString() }));
+  door(864e5);
+  const alt = device();
+  assert.equal((await alt.post('/api/join', { v1: 'falsch' })).status, 403);
+  const r = await alt.post('/api/join', { v1: 'altes-geheimnis' });
+  assert.equal(r.joined, true);
+  assert.equal(r.code, code); // bekommt den neuen Einladungscode mit
+  assert.ok(r.members.some(m => m.id === MIA));
+  assert.equal((await alt.get('/api/state')).status, 401); // aufgenommen heißt nicht angemeldet: die PIN braucht es weiter
+  assert.equal((await alt.post('/api/login', { member_id: MIA, pin: '0000' })).status, 401);
+  assert.ok((await admin.get('/api/invite')).v1_until);
+
+  door(-1000); // abgelaufen
+  assert.equal((await device().post('/api/join', { v1: 'altes-geheimnis' })).status, 403);
+  assert.equal((await admin.get('/api/invite')).v1_until, null);
+
+  door(864e5);
+  const neu = await admin.post('/api/invite/renew'); // ein neuer Einladungslink schließt jeden alten Weg
+  assert.notEqual(neu.code, code);
+  assert.equal((await device().post('/api/join', { v1: 'altes-geheimnis' })).status, 403);
+  assert.equal((await device().post('/api/join', { code })).status, 403);
+  code = neu.code;
+  assert.equal((await device().post('/api/join', { code })).joined, true);
 });
 
 test('www leitet auf die Hauptadresse um, die Version ist abfragbar', async () => {

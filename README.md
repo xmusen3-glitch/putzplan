@@ -79,6 +79,7 @@ Seit dem 14.11.2026 ist V2 der Branch `main`. Die alte Fassung bleibt erhalten:
 - **Code:** Branch `v1-archiv` und Tag `v1`.
 - **Alte Adresse:** `xmusen3-glitch.github.io/putzplan` gibt es weiter. Dahinter liegt die `index.html` im Hauptordner dieses Repos, die auf dokas-family.com weiterleitet. Sie gehört nicht zur App.
 - **Daten:** Alles wurde übernommen und mit `server/verify-v1.js` abgeglichen (jede Zeile, jedes Foto über Prüfsummen). Die unveränderten Rohdaten aus V1 liegen auf dem Server unter `/opt/backup/putzplan/v1-archiv/`.
+- **Übergang für alte Geräte:** Wer noch die alte App oder den alten Link öffnet, wird von der alten Adresse mit seiner Familie und seinem Namen zur neuen geschickt. Die neue App nimmt das Gerät dann von selbst auf und zeigt gleich den richtigen Namen, nur die PIN muss noch eingegeben werden. Das gilt befristet (`node server/v1-door.js` zeigt, bis wann; `zu` schließt es). Auf dem Server liegt dafür nur eine Prüfsumme des alten Familien-Geheimcodes. Ein neuer Einladungslink in der App beendet den Übergang sofort.
 - **Nachzügler:** Falls nach dem Umschalten noch jemand in der alten App etwas erledigt hat, holt `node server/migrate-v1.js --nur-neues` nur das Fehlende nach und fasst nichts an, was in V2 schon steht.
 
 Das alte Supabase-Projekt ist seit dem 14.11.2026 eingefroren: Mit dem Familien-Geheimcode lässt sich alles noch lesen, aber nichts mehr schreiben, und der stündliche Wecker für Benachrichtigungen ist abgeschaltet. Dafür lief im SQL Editor dort einmal:

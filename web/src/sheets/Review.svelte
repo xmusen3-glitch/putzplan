@@ -7,7 +7,7 @@
   import { toast, tryDo } from '../lib/ui.svelte.js';
   let { only = null, close } = $props();
   let note = $state(''), asking = $state(false), busy = $state(false);
-  const cur = $derived(only ? S.entries.find(e => e.id === only && e.status === 'done') : G.queue[0]);
+  const cur = $derived(only ? [...S.entries, ...S.older].find(e => e.id === only && e.status === 'done') : G.queue[0]);
   const time = iso => new Date(iso).toLocaleString('de-DE', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
   async function verdict(v) {
@@ -24,7 +24,7 @@
 </script>
 
 {#if cur}
-  <Head title="Fotos prüfen" {close}>
+  <Head title={only && cur.review ? 'Urteil ändern' : 'Fotos prüfen'} {close}>
     {#if !only}<span class="chip c-brand">{G.queue.length} offen</span>{/if}
   </Head>
   <div class="row">

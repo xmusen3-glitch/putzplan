@@ -1,6 +1,6 @@
 // Alle Anfragen der App. Jede Regel (wer darf was, wie viele Punkte) wird hier geprüft, nicht im Handy.
-import { randomUUID, createHash } from 'node:crypto';
-import { q, row, out, insert, patch, save, remove, settings, setMeta, inviteCode, newCode, savePhoto, delPhoto, logicState, since40, lastBackup } from './db.js';
+import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
+import { q, row, out, insert, patch, save, remove, settings, getMeta, setMeta, inviteCode, newCode, savePhoto, delPhoto, logicState, since40, lastBackup } from './db.js';
 import { on, Fail, now, emit, emitDel, emitSettings, emitSay, hashPin, checkPin, pinGuard, startSession, endSession, openStream, dropStreams, STREAM, VERSION } from './core.js';
 import { notify, publicKey } from './push.js';
 import * as L from '../shared/logic.js';
@@ -27,10 +27,23 @@ const picker = () => q.all('select id, name, emoji, pin_hash from members where 
 
 // ---------- Beitreten und Anmelden ----------
 on('GET', '/api/session', 'open', ({ sess, me }) => ({ joined: !!sess, me: me?.active ? me.id : null, members: sess ? picker() : [] }));
+/**
+ * Übergangstür nach dem Umstieg von V1: Geräte, die noch die alte App kennen, weisen sich mit deren
+ * Familien-Geheimcode aus und müssen den neuen Einladungslink nicht eigens bekommen. Hier liegt nur eine
+ * Prüfsumme davon, und die Tür hat ein Ablaufdatum (server/v1-door.js). Die PIN braucht es danach trotzdem.
+ */
+function v1Door(secret) {
+  const door = getMeta('v1_door');
+  if (!door || typeof secret !== 'string' || !secret || door.until < now()) return false;
+  const a = Buffer.from(createHash('sha256').update(secret).digest('hex')), b = Buffer.from(String(door.hash));
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 on('POST', '/api/join', 'open', ({ req, res, body, sess }) => {
-  if (str(body.code, 64) !== inviteCode()) throw new Fail(403, 'Der Einladungslink ist nicht (mehr) gültig');
+  const old = v1Door(body.v1);
+  if (!old && str(body.code, 64) !== inviteCode()) throw new Fail(403, body.v1 ? 'Der automatische Umzug geht nicht mehr. Bitte den neuen Einladungslink öffnen.' : 'Der Einladungslink ist nicht (mehr) gültig');
   if (!sess) startSession(req, res);
-  return { joined: true, members: picker() };
+  // Wer über die alte App kommt, bekommt den neuen Einladungscode mit (für „Zum Home-Bildschirm“ auf dem iPhone)
+  return { joined: true, members: picker(), ...(old ? { code: inviteCode() } : {}) };
 });
 on('POST', '/api/login', 'device', ({ body, sess }) => {
   const m = member(body.member_id), pin = str(body.pin, 12);
@@ -383,12 +396,14 @@ on('PUT', '/api/settings', 'admin', ({ body, me }) => {
   addLog(me, 'hat die Regeln geändert');
   emitSettings(next);
 });
-on('GET', '/api/invite', 'admin', () => ({ code: inviteCode() }));
+const doorUntil = () => { const d = getMeta('v1_door'); return d && d.until > now() ? d.until : null; };
+on('GET', '/api/invite', 'admin', () => ({ code: inviteCode(), v1_until: doorUntil() }));
 on('POST', '/api/invite/renew', 'admin', ({ me }) => {
   const code = newCode();
   setMeta('code', code);
+  setMeta('v1_door', null); // ein neuer Link schließt jeden alten Weg herein, auch den über die alte App
   addLog(me, 'hat einen neuen Einladungslink erzeugt (der alte gilt nicht mehr)');
-  return { code };
+  return { code, v1_until: null };
 });
 on('POST', '/api/log/:id/undo', 'admin', ({ p }) => {
   const l = need('log', +p.id);

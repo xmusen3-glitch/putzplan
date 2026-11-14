@@ -18,6 +18,12 @@
     pin = ''; first = ''; asked = false;
     msg = who.has_pin ? 'Deine PIN bitte' : 'Leg deine geheime 4-stellige PIN fest';
   }
+  // Vom alten Putzplan herübergekommen: gleich beim eigenen Namen landen
+  if (S.preselect) {
+    const m = S.picker.find(x => x.id === S.preselect);
+    S.preselect = null;
+    if (m) pick(m).then(() => { msg = who.has_pin ? `Willkommen im neuen Putzplan, ${who.name}! Deine PIN bitte` : 'Willkommen im neuen Putzplan! Leg deine 4-stellige PIN fest'; });
+  }
   async function press(k) {
     if (busy) return;
     pin = k === 'del' ? pin.slice(0, -1) : pin.length < 4 ? pin + k : pin;

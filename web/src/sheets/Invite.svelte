@@ -4,22 +4,24 @@
   import { api, post } from '../lib/store.svelte.js';
   import { toast, tryDo } from '../lib/ui.svelte.js';
   let { close } = $props();
-  let link = $state(''), qr = $state('');
+  let link = $state(''), qr = $state(''), oldUntil = $state(null);
 
-  async function show(code) {
+  async function show(code, v1_until) {
+    oldUntil = v1_until || null;
     link = `${location.origin}/#join=${code}`;
     const { default: qrcode } = await import('qrcode-generator');
     const q = qrcode(0, 'L');
     q.addData(link); q.make();
     qr = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
   }
-  tryDo(async () => show((await api('GET', '/invite')).code));
+  tryDo(async () => { const r = await api('GET', '/invite'); await show(r.code, r.v1_until); });
   const share = () => navigator.share({ title: 'Unser Putzplan', text: 'Hier ist unser Familien-Putzplan. Öffnen, Namen antippen, PIN festlegen.', url: link }).catch(() => {});
   const copy = () => navigator.clipboard.writeText(link).then(() => toast('Link kopiert'), () => prompt('Link kopieren:', link));
   async function renew() {
     if (!confirm('Neuen Link erzeugen? Der alte Link funktioniert dann nicht mehr. Wer schon drin ist, bleibt drin.')) return;
-    await tryDo(async () => { await show((await post('/invite/renew')).code); toast('Neuer Link ist da.'); });
+    await tryDo(async () => { await show((await post('/invite/renew')).code, null); toast('Neuer Link ist da.'); });
   }
+  const day = iso => new Date(iso).toLocaleDateString('de-DE', { day: 'numeric', month: 'long' });
 </script>
 
 <Head title="Familie einladen" {close} />
@@ -29,6 +31,7 @@
   {#if navigator.share}<button class="btn" onclick={share}><Icon name="share-2" size={16} />Link teilen</button>{/if}
   <button class="btn sec" onclick={copy}><Icon name="copy" size={16} />Link kopieren</button>
 </div>
+{#if oldUntil}<p class="hint">Wer noch die alte App oder den alten Link öffnet, kommt bis zum {day(oldUntil)} von selbst herüber und landet bei seinem Namen.</p>{/if}
 <button class="link" style="margin-top:10px" onclick={renew}><Icon name="refresh-cw" size={14} />Neuen Link erzeugen (alter wird ungültig)</button>
 
 <style>

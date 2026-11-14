@@ -22,6 +22,7 @@ class Store {
   version = $state(''); // Stand des Servers beim Laden dieser Seite
   update = $state(false); // der Server läuft inzwischen mit einem neueren Stand
   backup = $state.raw(null); // Zeitpunkt der letzten Sicherung (nur für Admins)
+  preselect = null; // Person, mit der das Gerät in der alten App angemeldet war
 }
 export const S = new Store();
 
@@ -125,13 +126,30 @@ function connect() {
   es.onmessage = e => apply(JSON.parse(e.data));
   es.onerror = () => { S.online = false; if (es.readyState === 2) setTimeout(() => S.phase === 'app' && boot(), 4000); };
 }
+/** Kommt das Gerät gerade von der alten App? Die alte Adresse hängt dann Familie und Person an (#umzug=…). */
+function readMove() {
+  const raw = /umzug=([\w-]+)/.exec(location.hash)?.[1];
+  if (!raw) return null;
+  try {
+    const j = JSON.parse(decodeURIComponent(escape(atob(raw.replace(/-/g, '+').replace(/_/g, '/')))));
+    return typeof j?.f === 'string' ? j : null;
+  } catch { return null; }
+}
 export async function boot() {
   es?.close(); es = null;
-  const code = /join=([\w-]+)/.exec(location.hash)?.[1];
+  const code = /join=([\w-]+)/.exec(location.hash)?.[1], move = readMove();
   let s;
   try {
     s = await api('GET', '/session');
     if (!s.joined && code) s = await api('POST', '/join', { code }).catch(e => { S.joinError = e.message; return s; });
+    if (move) {
+      S.preselect = move.me || null; // der Anmeldeschirm springt gleich zum richtigen Namen
+      let next = '/';
+      if (!s.joined) {
+        try { s = await api('POST', '/join', { v1: move.f }); next = '/#join=' + s.code; } catch (e) { S.joinError = e.message; }
+      }
+      history.replaceState(null, '', next); // den alten Geheimcode nicht in der Adresse stehen lassen
+    }
   } catch (e) { S.joinError = e.message; return void (S.phase = 'join'); }
   if (!s.joined) return void (S.phase = 'join');
   S.picker = s.members;
