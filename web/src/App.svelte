@@ -2,7 +2,9 @@
   import { fly, fade } from 'svelte/transition';
   import Icon from './parts/Icon.svelte';
   import { S, G, mName } from './lib/store.svelte.js';
-  import { ui, toast } from './lib/ui.svelte.js';
+  import { ui, toast, open } from './lib/ui.svelte.js';
+  import { pushAsk, pushLater } from './lib/push.js';
+  import PushAsk from './sheets/PushAsk.svelte';
   import { ROLES } from '../../shared/logic.js';
   import Join from './views/Join.svelte';
   import Who from './views/Who.svelte';
@@ -29,6 +31,20 @@
 
   // Durchsagen kommen bei offenen Apps sofort als Meldung an
   $effect(() => { if (S.say && S.say.from !== S.meId) toast(`Durchsage von ${mName(S.say.from)}: ${S.say.text}`, 8000); });
+
+  // Beim Öffnen fragen, ob Benachrichtigungen an sollen: einmal je Person und App-Start, kurz nachdem die App steht
+  let asked;
+  $effect(() => {
+    const id = S.phase === 'app' ? S.meId : null;
+    if (!id || asked === id) return;
+    asked = id;
+    setTimeout(async () => {
+      const kind = S.meId === id && pushAsk();
+      if (!kind || ui.sheets.length) return;
+      const r = await open(PushAsk, { kind });
+      if (r !== 'an') pushLater(r === 'nie');
+    }, 800);
+  });
 </script>
 
 {#if S.phase === 'boot'}

@@ -19,8 +19,18 @@ export async function enablePush() {
   await subscribe();
   await post('/push/test');
 }
-/** Nach einem Personenwechsel auf diesem Gerät: die Benachrichtigungen gehören jetzt der neuen Person. */
-export function rebindPush() {
-  const was = localStorage.getItem('pp_push');
-  if (was && was !== S.meId && pushSupported() && Notification.permission === 'granted') subscribe().catch(() => {});
+/**
+ * Beim Öffnen der App. Hat das Gerät die Erlaubnis schon, meldet es sich still wieder an (auch nach einem
+ * Personenwechsel: die Benachrichtigungen gehören dann der neuen Person). Sonst sagt die Antwort, welcher
+ * Hinweis gezeigt werden soll: 'frage' (einschalten), 'gesperrt' (im Gerät verboten), 'ios' (erst auf den
+ * Home-Bildschirm) oder nichts.
+ */
+export function pushAsk() {
+  if (pushSupported() && Notification.permission === 'granted' && localStorage.getItem('pp_push')) { subscribe().catch(() => {}); return null; }
+  const wait = localStorage.getItem('pp_push_ask');
+  if (wait === 'nie' || +wait > Date.now()) return null;
+  if (!pushSupported()) return isIOS && !isStandalone() ? 'ios' : null;
+  return Notification.permission === 'denied' ? 'gesperrt' : 'frage';
 }
+/** „Später“ fragt am nächsten Tag wieder, „nicht mehr fragen“ gilt für dieses Gerät. */
+export const pushLater = never => localStorage.setItem('pp_push_ask', never ? 'nie' : String(Date.now() + 20 * 3600e3));
