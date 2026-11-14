@@ -72,6 +72,30 @@ In Cloudflare genügt der normale Proxy. Fotos und Daten werden dort nicht zwisc
 - Was Admin, Mitglied und Kind dürfen, entscheidet der Server. Punkte vergibt er selbst.
 - Fotos sind nur mit Anmeldung abrufbar und bleiben dauerhaft gespeichert. Die App zeigt die letzten Wochen sofort, ältere lädt sie unter „Fotos“ nach.
 
+## V1 als Archiv
+
+Seit dem 14.11.2026 ist V2 der Branch `main`. Die alte Fassung bleibt erhalten:
+
+- **Code:** Branch `v1-archiv` und Tag `v1`.
+- **Alte Adresse:** `xmusen3-glitch.github.io/putzplan` gibt es weiter. Dahinter liegt die `index.html` im Hauptordner dieses Repos, die auf dokas-family.com weiterleitet. Sie gehört nicht zur App.
+- **Daten:** Alles wurde übernommen und mit `server/verify-v1.js` abgeglichen (jede Zeile, jedes Foto über Prüfsummen). Die unveränderten Rohdaten aus V1 liegen auf dem Server unter `/opt/backup/putzplan/v1-archiv/`.
+- **Nachzügler:** Falls nach dem Umschalten noch jemand in der alten App etwas erledigt hat, holt `node server/migrate-v1.js --nur-neues` nur das Fehlende nach und fasst nichts an, was in V2 schon steht.
+
+Damit in V1 nichts mehr geschrieben wird und es keine Benachrichtigungen mehr schickt, im SQL Editor des alten Supabase-Projekts einmal ausführen:
+
+```sql
+-- V1 einfrieren: nur noch lesen, stündlichen Wecker abschalten
+do $$
+declare t text;
+begin
+  foreach t in array array['members','tasks','completions','photos','settings','reactions','push_subs','push_config'] loop
+    execute format('drop policy if exists familie on public.%I', t);
+    execute format('create policy familie on public.%I for select to anon, authenticated using (public.fam_ok())', t);
+  end loop;
+end $$;
+select cron.unschedule('putzplan-stuendlich');
+```
+
 ## PIN vergessen
 
 Auf dem Anmeldeschirm gibt es unter dem Ziffernfeld „PIN vergessen?“. Das meldet sich bei den Admins: in der Übersicht steht dann „PIN vergessen: Name“, ein Tipp setzt die PIN zurück. Danach legt die Person beim nächsten Öffnen eine neue fest. Admins können eine PIN auch jederzeit über die Person zurücksetzen.
