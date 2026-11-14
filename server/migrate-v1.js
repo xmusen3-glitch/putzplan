@@ -1,31 +1,20 @@
-// Einmaliger Umzug der Daten aus V1 (Supabase) nach V2. Liest in Supabase nur, ändert dort nichts.
-// Aufruf:  SB_URL=… SB_KEY=… FAMILIE=… npm run umzug
-// Kann beliebig oft laufen: vorhandene Zeilen werden überschrieben, Fotos nur einmal geholt.
+// Umzug der Daten aus V1 (Supabase) nach V2. Liest in Supabase nur, ändert dort nichts.
+// Aufruf:  SB_URL=… SB_KEY=… FAMILIE=… npm run umzug [-- --nur-neues]
+//   ohne Zusatz:   V1 ist die Wahrheit. Vorhandene Zeilen werden überschrieben, Fotos nur einmal geholt.
+//   --nur-neues:   für Nachzügler nach dem Umschalten. Es kommt nur dazu, was in V2 noch fehlt.
+//                  Nichts, was in V2 schon steht oder dort geändert wurde, wird angefasst.
+// Ob wirklich alles da ist, prüft danach server/verify-v1.js.
 import { existsSync, writeFileSync } from 'node:fs';
 import jpeg from 'jpeg-js';
 import { q, row, save, setMeta, settings, photoFile, inviteCode } from './db.js';
 import { DEFAULT_SETTINGS } from '../shared/logic.js';
+import { get, all, photoBytes, roleOf, isRoyal, helpersOf } from './v1.js';
 
-const { SB_URL, SB_KEY, FAMILIE } = process.env;
-if (!SB_URL || !SB_KEY || !FAMILIE) { console.error('Bitte SB_URL, SB_KEY und FAMILIE setzen.'); process.exit(1); }
-const headers = { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'x-familie': FAMILIE };
-async function get(path) {
-  const r = await fetch(`${SB_URL}/rest/v1/${path}`, { headers });
-  if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
-  return r.json();
-}
-/** Holt alle Zeilen in Blöcken, damit keine Obergrenze greift. */
-async function all(table, select = '*', order = 'id') {
-  const out = [];
-  for (let from = 0; ; from += 1000) {
-    const part = await get(`${table}?select=${select}&order=${order}&offset=${from}&limit=1000`);
-    out.push(...part);
-    if (part.length < 1000) return out;
-  }
-}
+const ONLY_NEW = process.argv.includes('--nur-neues');
 
 // Punkte aus V1 für Aufgaben, bei denen keine eigenen gesetzt waren
 const OLD_PTS = { 'eing-aufr': 2, 'eing-schuhe': 1, 'eing-ranzen': 1, 'eing-boden': 3, 'flur-saugen': 3, 'flur-wischen': 4, 'waschflur': 3, 'wz-decken': 1, 'wz-couch': 2, 'wz-tisch': 2, 'wz-kommode': 2, 'wz-tv': 3, 'wz-unter-couch': 4, 'ez-tisch': 2, 'ez-stuehle': 1, 'ez-stuehle-sauber': 3, 'boden-saugen': 4, 'boden-wischen': 4, 'k-sm-aus': 3, 'k-sm-ein': 3, 'k-flaechen': 3, 'k-muell-sort': 3, 'k-muell-raus': 3, 'k-boden': 4, 'k-kuehl': 5, 'gb-becken': 2, 'gb-wc': 4, 'gb-eimer': 2, 'gb-auff': 1, 'gb-fliesen': 3, 'gb-dusche': 5, 'spinnweben': 4, 'fenster': 5, 'zimmer': 5, 'garten-rasen': 6, 'garten-laub': 4, 'garten-unkraut': 5, 'auffahrt-fegen': 3, 'garage-ordnen': 5, 'durch-drin': 3, 'durch-draussen': 2 };
+export const taskPoints = t => t.points ?? OLD_PTS[t.id] ?? Math.max(1, Math.round((t.minutes || 5) / 5));
 
 /** Vorschaubild: längste Seite höchstens 480 Pixel. */
 function thumb(buf, max = 480) {
@@ -48,10 +37,8 @@ function thumb(buf, max = 480) {
 async function fetchPhoto(id) {
   if (!id || !/^[a-z0-9-]{8,80}$/.test(id)) return null;
   if (existsSync(photoFile(id)) && existsSync(photoFile(id, true))) return id;
-  const [p] = await get(`photos?select=data&id=eq.${id}`);
-  const m = /^data:image\/jpeg;base64,(.+)$/.exec(p?.data || '');
-  if (!m) return null;
-  const buf = Buffer.from(m[1], 'base64');
+  const buf = await photoBytes(id);
+  if (!buf) return null;
   writeFileSync(photoFile(id), buf);
   try { writeFileSync(photoFile(id, true), thumb(buf)); } catch { writeFileSync(photoFile(id, true), buf); }
   return id;
@@ -59,54 +46,60 @@ async function fetchPhoto(id) {
 
 const [members, tasks, comps, reactions, sets] = await Promise.all([all('members'), all('tasks'), all('completions'), all('reactions'), get('settings?select=data&id=eq.1')]);
 const old = sets[0]?.data || {};
+const added = { members: 0, tasks: 0, entries: 0, reactions: 0 };
 
 // Frische Installation: die Beispiel-Person "Admin" und die Standard-Aufgaben weichen den echten Daten.
-// Sobald es Einträge gibt (erneuter Umzug am Stichtag), bleibt alles stehen, was in V2 dazugekommen ist.
-if (members.length && q.get('select count(*) as n from entries').n === 0) {
+if (!ONLY_NEW && members.length && q.get('select count(*) as n from entries').n === 0) {
   q.run('delete from members');
   q.run('delete from tasks');
   q.run('delete from sessions');
 }
 
 for (const m of members) {
+  if (row('members', m.id)) { if (ONLY_NEW) continue; } else added.members++;
   save('members', {
-    id: m.id, name: m.name, emoji: m.emoji || '🙂', role: m.is_admin ? 'admin' : m.klein ? 'kind' : 'mitglied',
+    id: m.id, name: m.name, emoji: m.emoji || '🙂', role: roleOf(m),
     w_weekday: m.w_weekday ?? 1, w_weekend: m.w_weekend ?? 1, waschtag: m.waschtag ?? null, active: m.active !== false,
     pin_hash: m.pin_hash ?? null, sort: m.sort ?? 0, rain: m.rain ?? null, titel: (old.titel || {})[m.id] || null,
   });
 }
 for (const t of tasks) {
+  if (row('tasks', t.id)) { if (ONLY_NEW) continue; } else added.tasks++;
   save('tasks', {
     id: t.id, title: t.title, room: t.room || 'Extra', freq: t.freq || 'daily', day: t.day ?? 0, minutes: t.minutes ?? 5,
-    points: t.points ?? OLD_PTS[t.id] ?? Math.max(1, Math.round((t.minutes || 5) / 5)), leicht: !!t.leicht, per_person: !!t.per_person,
-    active: t.active !== false, proposed_by: t.proposed_by ?? null,
+    points: taskPoints(t), leicht: !!t.leicht, per_person: !!t.per_person, active: t.active !== false, proposed_by: t.proposed_by ?? null,
   });
 }
 
 let photos = 0, missing = 0;
 for (const [i, c] of comps.entries()) {
+  const known = row('entries', c.id);
+  // Nachzügler: Vorhandenes bleibt, außer eine in V2 noch offene Aufgabe wurde in V1 inzwischen fertig gemacht
+  if (known && ONLY_NEW && !(['todo', 'started'].includes(known.status) && c.status === 'done')) continue;
+  if (!known) added.entries++;
   const before = await fetchPhoto(c.before_photo), after = await fetchPhoto(c.after_photo);
   photos += (before ? 1 : 0) + (after ? 1 : 0);
   missing += (c.before_photo && !before ? 1 : 0) + (c.after_photo && !after ? 1 : 0);
-  let helpers = [];
-  try { const h = JSON.parse(c.helpers || '[]'); if (Array.isArray(h)) helpers = h; } catch {}
-  const royal = c.task_id === 'frei' && /^Königlicher freier Tag/.test(c.title || '');
-  const known = row('entries', c.id);
   save('entries', {
-    id: c.id, task_id: c.task_id, title: royal ? 'Königlicher freier Tag' : c.title, member_id: c.member_id, period: c.period, slot: c.slot || '',
+    id: c.id, task_id: c.task_id, title: isRoyal(c) ? 'Königlicher freier Tag' : c.title, member_id: c.member_id, period: c.period, slot: c.slot || '',
     status: c.status, before_photo: before, before_at: c.before_at ?? null, after_photo: after, after_at: c.after_at ?? null, points: c.points ?? 0,
-    note: royal ? 'royal' : c.note ?? null, helpers, created_by: c.created_by ?? null, created_at: c.created_at,
+    note: isRoyal(c) ? 'royal' : c.note ?? null, helpers: helpersOf(c), created_by: c.created_by ?? null, created_at: c.created_at,
     // Was aus V1 kommt, gilt als schon gesehen. Ein in V2 bereits gesetztes Urteil bleibt.
     review: known?.review ?? (c.status === 'done' ? 'ok' : null),
   });
   if ((i + 1) % 25 === 0) console.log(`  ${i + 1}/${comps.length} Einträge …`);
 }
 const ids = new Set(comps.map(c => c.id));
-for (const r of reactions) if (ids.has(r.completion_id)) save('reactions', { id: r.id, entry_id: r.completion_id, member_id: r.member_id, emoji: r.emoji ?? null, text: r.text ?? null, created_at: r.created_at });
+for (const r of reactions) {
+  if (!ids.has(r.completion_id)) continue;
+  if (row('reactions', r.id)) { if (ONLY_NEW) continue; } else added.reactions++;
+  save('reactions', { id: r.id, entry_id: r.completion_id, member_id: r.member_id, emoji: r.emoji ?? null, text: r.text ?? null, created_at: r.created_at });
+}
 
 // Die Löschfrist für Fotos aus V1 wird nicht übernommen: in V2 bleiben Fotos dauerhaft.
-setMeta('settings', { ...DEFAULT_SETTINGS, ...settings(), min_minutes: old.min_minutes ?? 2, koch_regel: old.koch_regel !== false, tagesziel: old.tagesziel ?? 10 });
+if (!ONLY_NEW) setMeta('settings', { ...DEFAULT_SETTINGS, ...settings(), min_minutes: old.min_minutes ?? 2, koch_regel: old.koch_regel !== false, tagesziel: old.tagesziel ?? 10 });
 
-console.log(`Umzug fertig: ${members.length} Personen, ${tasks.length} Aufgaben, ${comps.length} Einträge, ${reactions.length} Reaktionen, ${photos} Fotos${missing ? ` (${missing} Fotos gab es in V1 nicht mehr)` : ''}.`);
-console.log(`In der Datenbank: ${q.get('select count(*) as n from entries').n} Einträge, ${q.get('select count(*) as n from reactions').n} Reaktionen.`);
-console.log(`Einladungslink: <Adresse der App>/#join=${inviteCode()}`);
+console.log(`${ONLY_NEW ? 'Nachzügler' : 'Umzug'} fertig. In V1: ${members.length} Personen, ${tasks.length} Aufgaben, ${comps.length} Einträge, ${reactions.length} Reaktionen.`);
+console.log(`Neu dazugekommen: ${added.members} Personen, ${added.tasks} Aufgaben, ${added.entries} Einträge, ${added.reactions} Reaktionen.${ONLY_NEW ? '' : ` Fotos vorhanden: ${photos}${missing ? ` (${missing} gab es in V1 schon nicht mehr)` : ''}.`}`);
+console.log(`In V2 jetzt: ${q.get('select count(*) as n from entries').n} Einträge, ${q.get('select count(*) as n from reactions').n} Reaktionen.`);
+if (!ONLY_NEW) console.log(`Einladungslink: <Adresse der App>/#join=${inviteCode()}`);
