@@ -39,11 +39,29 @@ Die PINs aus V1 gelten weiter. Was schon erledigt war, zählt als geprüft.
 
 ## Auf dem Server
 
+Die App läuft unter https://dokas-family.com. Einmalig im Projektordner auf dem Server:
+
+```bash
+cp .env.example .env && mkdir -p data && chown 1000:1000 data
+```
+
 ```bash
 docker compose up -d --build
 ```
 
-Der Container hängt im Docker-Netz `proxy`. Im Nginx Proxy Manager einen Proxy Host auf `putzplan`, Port `8080` anlegen, mit SSL. Die Daten liegen neben der `docker-compose.yml` im Ordner `data/`. Für eine Sicherung reicht es, diesen Ordner zu kopieren.
+Der Container läuft nicht als root, deshalb gehört der Ordner `data/` dem Benutzer 1000. Er hängt im Docker-Netz `proxy`. Im Nginx Proxy Manager einen Proxy Host für `dokas-family.com` und `www.dokas-family.com` auf `putzplan`, Port `8080` anlegen, mit SSL. Die Daten liegen neben der `docker-compose.yml` im Ordner `data/`. Für eine Sicherung reicht es, diesen Ordner zu kopieren.
+
+Der Einladungslink:
+
+```bash
+docker exec putzplan node server/invite.js
+```
+
+Der Umzug aus V1 läuft auf dem Server im Container:
+
+```bash
+docker exec -e SB_URL=https://<projekt>.supabase.co -e SB_KEY=<publishable key> -e FAMILIE=<Familien-Geheimcode> putzplan node server/migrate-v1.js
+```
 
 In Cloudflare genügt der normale Proxy. Fotos und Daten werden dort nicht zwischengespeichert, weil sie nur mit Anmeldung abrufbar sind.
 

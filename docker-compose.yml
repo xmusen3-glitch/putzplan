@@ -1,4 +1,5 @@
 # Putzplan hinter dem Nginx Proxy Manager: kein Port nach außen, der Proxy erreicht den Dienst als "putzplan:8080".
+# Die Werte für APP_URL und PUSH_CONTACT stehen in der Datei .env neben dieser Datei (siehe .env.example).
 services:
   putzplan:
     build: .
@@ -6,8 +7,10 @@ services:
     restart: unless-stopped
     environment:
       TZ: Europe/Berlin
-      # Kontaktadresse für die Push-Dienste von Apple und Google (Pflichtangabe)
-      PUSH_CONTACT: ${PUSH_CONTACT:-mailto:putzplan@example.com}
+      # Adresse der App, z. B. https://dokas-family.com (für Einladungslinks und die Weiterleitung von www)
+      APP_URL: ${APP_URL:-}
+      # Kontaktangabe für die Push-Dienste von Apple und Google (Pflicht): eine https-Adresse oder mailto:
+      PUSH_CONTACT: ${PUSH_CONTACT:-${APP_URL:-mailto:putzplan@example.com}}
     volumes:
       - ./data:/data
     networks:

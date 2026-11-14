@@ -9,6 +9,8 @@ import { startJobs } from './push.js';
 import './api.js';
 
 const PORT = +process.env.PORT || 8080;
+// Hauptadresse ohne www: wer www.… öffnet, wird umgeleitet (sonst gäbe es zwei getrennte Anmeldungen)
+const HOME = process.env.APP_URL ? new URL(process.env.APP_URL) : null;
 const DIST = join(import.meta.dirname, '..', 'dist');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 const SECURITY = {
@@ -77,6 +79,7 @@ createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x'), path = decodeURIComponent(url.pathname);
     if (path === '/healthz') return json(res, 200, { ok: true });
+    if (HOME && (req.headers['x-forwarded-host'] || req.headers.host) === 'www.' + HOME.host) { res.writeHead(301, { Location: HOME.origin + req.url }); return res.end(); }
     if (path.startsWith('/api/')) return await api(req, res, path, url);
     if (path.startsWith('/photos/')) return photo(req, res, path);
     return file(req, res, path);
