@@ -2,13 +2,22 @@
   // Reaktionen erscheinen sofort (ohne auf den Server zu warten), Kommentare sind eingeklappt.
   import Icon from './Icon.svelte';
   import { S, G, reactionsOf, mName, post, del } from '../lib/store.svelte.js';
-  import { rain, toast, tryDo } from '../lib/ui.svelte.js';
+  import { rain, toast, tryDo, open } from '../lib/ui.svelte.js';
+  import Reactors from '../sheets/Reactors.svelte';
   import { REACTS } from '../../../shared/logic.js';
   let { entry } = $props();
   let picking = $state(false), showComments = $state(false), text = $state('');
   const all = $derived(reactionsOf(entry.id));
   const comments = $derived(all.filter(r => r.text).sort((a, b) => a.created_at.localeCompare(b.created_at)));
   const groups = $derived(REACTS.map(e => ({ e, who: all.filter(r => r.emoji === e) })).filter(g => g.who.length));
+
+  // Gedrückt halten (oder Rechtsklick) zeigt, wer womit reagiert hat. Kurz tippen reagiert wie bisher.
+  let holdTimer, held = false;
+  const who = () => { held = true; open(Reactors, { entry }); };
+  function down() { held = false; clearTimeout(holdTimer); holdTimer = setTimeout(who, 450); }
+  const up = () => clearTimeout(holdTimer);
+  function menu(e) { e.preventDefault(); clearTimeout(holdTimer); if (!held) who(); }
+  function tap(emoji) { if (held) return void (held = false); react(emoji); }
 
   function react(emoji) {
     picking = false;
@@ -39,7 +48,8 @@
     <button class="rc ghost" onclick={() => (picking = false)} aria-label="Schließen"><Icon name="x" size={14} /></button>
   {:else}
     {#each groups as g (g.e)}
-      <button class="rc" class:on={g.who.some(r => r.member_id === S.meId)} onclick={() => react(g.e)} title={g.who.map(r => mName(r.member_id)).join(', ')}>{g.e} {g.who.length}</button>
+      <button class="rc" class:on={g.who.some(r => r.member_id === S.meId)} onclick={() => tap(g.e)} onpointerdown={down} onpointerup={up} onpointerleave={up} onpointercancel={up} oncontextmenu={menu}
+        title="{g.who.map(r => mName(r.member_id)).join(', ')} (gedrückt halten für Details)">{g.e} {g.who.length}</button>
     {/each}
     <button class="rc ghost" onclick={() => (picking = true)} aria-label="Reagieren"><Icon name="smile-plus" size={16} /></button>
     <button class="rc ghost" onclick={() => (showComments = !showComments)} aria-label="Kommentare"><Icon name="message-circle" size={16} />{comments.length || ''}</button>
