@@ -33,5 +33,8 @@ find "$DEST/db" -name 'putzplan-*.db.gz' -mtime +14 ! -name 'putzplan-????-??-01
 find "$DEST/db" -name 'putzplan-????-??-01.db.gz' -mtime +400 -delete
 find "$DEST/photos" -type f -links 1 -ctime +30 -delete
 
+# Zeitpunkt merken: die App zeigt ihn Admins unter Verwaltung > Regeln und warnt, wenn er zu alt wird
+date -Iseconds > "$APP/data/.letzte-sicherung"
+
 total=$(find "$DEST/photos" -type f | wc -l)
 echo "$(date '+%F %T') $info | Fotos: $new neu, $total gesichert | Kopien der Datenbank: $(ls "$DEST/db" | wc -l)"

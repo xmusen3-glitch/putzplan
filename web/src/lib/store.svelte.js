@@ -21,6 +21,7 @@ class Store {
   say = $state.raw(null); // letzte Durchsage
   version = $state(''); // Stand des Servers beim Laden dieser Seite
   update = $state(false); // der Server läuft inzwischen mit einem neueren Stand
+  backup = $state.raw(null); // Zeitpunkt der letzten Sicherung (nur für Admins)
 }
 export const S = new Store();
 
@@ -50,6 +51,8 @@ export const G = {
   get proposals() { return S.tasks.filter(t => t.proposed_by); },
   /** Personen, die auf dem Anmeldeschirm „PIN vergessen“ gedrückt haben. */
   get pinHelp() { return S.members.filter(m => m.pin_help && m.active); },
+  /** Die nächtliche Sicherung ist seit über 36 Stunden nicht gelaufen. Ohne Angabe (z. B. lokal) keine Warnung. */
+  get backupLate() { return !!S.backup && S.now - new Date(S.backup) > 36 * 3600e3; },
   /** Gemeinsame Aufgaben, die heute dran oder liegengeblieben sind. */
   get shared() { const d = calc.d; return S.tasks.filter(t => t.active && !t.per_person && L.activeOn(t, d) && (L.dueOn(t, d) || L.overdueInPeriod(t, d))); },
   get late() { const { d, ix } = calc; return G.shared.filter(t => L.overdueInPeriod(t, d) && !L.entryFor(ix, t, d, null)); },
@@ -100,6 +103,7 @@ async function loadState() {
   S.reactions = [...st.reactions, ...S.reactions.filter(r => old.has(r.entry_id))];
   S.settings = { ...L.DEFAULT_SETTINGS, ...st.settings }; S.pushKey = st.push_key;
   if (!S.older.length) S.olderMore = !!st.older;
+  S.backup = st.backup ?? null;
   // Nach einem Update läuft im Handy noch der alte Stand der App: Hinweis zum Neuladen zeigen
   if (!S.version) S.version = st.version || '';
   else if (st.version && st.version !== S.version) S.update = true;

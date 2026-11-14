@@ -106,6 +106,8 @@ test('Zustand: alles da, aber nie ein PIN-Hash', async () => {
   assert.ok(!JSON.stringify(st).includes('pin_hash'));
   assert.equal(typeof st.push_key, 'string');
   assert.equal(typeof st.version, 'string');
+  assert.equal(st.backup, null); // Admins sehen den Stand der Sicherung (hier: noch keine gelaufen)
+  assert.ok(!('backup' in (await mia.get('/api/state'))));
 });
 
 test('Aufgabe starten und abhaken: doppelt geht nicht, zu schnell geht nicht, Punkte vergibt der Server', async () => {

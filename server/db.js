@@ -1,6 +1,6 @@
 // SQLite-Datenbank (eine Datei) und Foto-Ablage.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, writeFileSync, renameSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, renameSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_SETTINGS } from '../shared/logic.js';
@@ -79,6 +79,8 @@ export function out(table, r) {
 export const getMeta = (key, fallback = null) => { const r = q.get('select value from meta where key = ?', key); return r ? JSON.parse(r.value) : fallback; };
 export const setMeta = (key, value) => q.run('insert into meta (key, value) values (?, ?) on conflict (key) do update set value = excluded.value', key, JSON.stringify(value));
 export const settings = () => ({ ...DEFAULT_SETTINGS, ...getMeta('settings', {}) });
+/** Wann scripts/backup.sh zuletzt erfolgreich gelaufen ist (oder null, wenn noch nie). */
+export const lastBackup = () => { try { return readFileSync(join(DATA, '.letzte-sicherung'), 'utf8').trim() || null; } catch { return null; } };
 export const newCode = () => randomBytes(12).toString('base64url');
 export function inviteCode() {
   let c = getMeta('code');
