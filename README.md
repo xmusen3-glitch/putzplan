@@ -81,7 +81,7 @@ Seit dem 14.11.2026 ist V2 der Branch `main`. Die alte Fassung bleibt erhalten:
 - **Daten:** Alles wurde übernommen und mit `server/verify-v1.js` abgeglichen (jede Zeile, jedes Foto über Prüfsummen). Die unveränderten Rohdaten aus V1 liegen auf dem Server unter `/opt/backup/putzplan/v1-archiv/`.
 - **Nachzügler:** Falls nach dem Umschalten noch jemand in der alten App etwas erledigt hat, holt `node server/migrate-v1.js --nur-neues` nur das Fehlende nach und fasst nichts an, was in V2 schon steht.
 
-Damit in V1 nichts mehr geschrieben wird und es keine Benachrichtigungen mehr schickt, im SQL Editor des alten Supabase-Projekts einmal ausführen:
+Das alte Supabase-Projekt ist seit dem 14.11.2026 eingefroren: Mit dem Familien-Geheimcode lässt sich alles noch lesen, aber nichts mehr schreiben, und der stündliche Wecker für Benachrichtigungen ist abgeschaltet. Dafür lief im SQL Editor dort einmal:
 
 ```sql
 -- V1 einfrieren: nur noch lesen, stündlichen Wecker abschalten
@@ -89,12 +89,17 @@ do $$
 declare t text;
 begin
   foreach t in array array['members','tasks','completions','photos','settings','reactions','push_subs','push_config'] loop
-    execute format('drop policy if exists familie on public.%I', t);
-    execute format('create policy familie on public.%I for select to anon, authenticated using (public.fam_ok())', t);
+    if to_regclass('public.' || t) is not null then
+      execute format('drop policy if exists familie on public.%I', t);
+      execute format('create policy familie on public.%I for select to anon, authenticated using (public.fam_ok())', t);
+      execute format('revoke insert, update, delete on public.%I from anon, authenticated', t);
+    end if;
   end loop;
 end $$;
-select cron.unschedule('putzplan-stuendlich');
+select cron.unschedule(jobid) from cron.job where jobname = 'putzplan-stuendlich';
 ```
+
+Rückgängig machen ließe sich das mit den SQL-Dateien aus dem Branch `v1-archiv` (`supabase-setup.sql` und `supabase-update-4-push.sql` legen Rechte, Regeln und Wecker wieder an). Kostenlose Supabase-Projekte werden nach längerer Zeit ohne Nutzung pausiert; das Archiv auf dem eigenen Server ist davon unabhängig.
 
 ## PIN vergessen
 
