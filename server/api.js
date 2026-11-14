@@ -1,7 +1,7 @@
 // Alle Anfragen der App. Jede Regel (wer darf was, wie viele Punkte) wird hier geprüft, nicht im Handy.
 import { randomUUID, createHash } from 'node:crypto';
 import { q, row, out, insert, patch, save, remove, settings, setMeta, inviteCode, newCode, savePhoto, delPhoto, logicState, since40 } from './db.js';
-import { on, Fail, now, emit, emitDel, emitSettings, emitSay, hashPin, checkPin, pinGuard, startSession, endSession, openStream, dropStreams, STREAM } from './core.js';
+import { on, Fail, now, emit, emitDel, emitSettings, emitSay, hashPin, checkPin, pinGuard, startSession, endSession, openStream, dropStreams, STREAM, VERSION } from './core.js';
 import { notify, publicKey } from './push.js';
 import * as L from '../shared/logic.js';
 
@@ -72,6 +72,7 @@ on('GET', '/api/state', 'member', ({ me }) => {
     reactions: q.all('select * from reactions where created_at >= ?', since40()).filter(r => ids.has(r.entry_id)),
     log: me.role === 'admin' ? q.all('select * from log order by id desc limit 150').map(r => out('log', r)) : [],
     push_key: publicKey,
+    version: VERSION,
     older: !!q.get("select 1 as x from entries where created_at < ? and status = 'done' limit 1", since40()),
   };
 });

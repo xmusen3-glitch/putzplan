@@ -1,0 +1,24 @@
+# Bei jedem Push und jedem Pull Request: App bauen und alle Tests laufen lassen.
+# Ausgerollt wird von hier aus nichts. Das holt sich der Server selbst (scripts/deploy.sh).
+name: Bauen und testen
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test

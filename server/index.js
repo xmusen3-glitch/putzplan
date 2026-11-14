@@ -2,7 +2,7 @@
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { join, extname, normalize } from 'node:path';
-import { match, sessionOf, collect, Fail, STREAM } from './core.js';
+import { match, sessionOf, collect, Fail, STREAM, VERSION } from './core.js';
 import { row, photoFile, inviteCode } from './db.js';
 import { seedIfEmpty } from './seed.js';
 import { startJobs } from './push.js';
@@ -78,7 +78,7 @@ function file(req, res, path) {
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://x'), path = decodeURIComponent(url.pathname);
-    if (path === '/healthz') return json(res, 200, { ok: true });
+    if (path === '/healthz') return json(res, 200, { ok: true, version: VERSION });
     if (HOME && (req.headers['x-forwarded-host'] || req.headers.host) === 'www.' + HOME.host) { res.writeHead(301, { Location: HOME.origin + req.url }); return res.end(); }
     if (path.startsWith('/api/')) return await api(req, res, path, url);
     if (path.startsWith('/photos/')) return photo(req, res, path);

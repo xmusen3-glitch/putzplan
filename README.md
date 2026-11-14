@@ -82,6 +82,21 @@ Hat die einzige Admin-Person ihre PIN vergessen, hilft der Befehl am Server:
 docker exec putzplan node server/reset-pin.js Dorina
 ```
 
+## Testen und automatisch ausrollen
+
+```bash
+npm test
+```
+
+Die Tests starten einen echten Server mit leerer Datenbank in einem Wegwerf-Ordner und spielen die wichtigen Abläufe durch (Anmeldung, Rechte, Aufgaben, Fotos, Live-Kanal). Dazu kommen Tests der Regeln in `shared/logic.js`.
+
+- **Bei GitHub** baut und testet `.github/workflows/test.yml` jeden Push und jeden Pull Request. Ausgerollt wird von dort nichts, es liegen keine Zugangsdaten zum Server bei GitHub.
+- **Auf dem Server** schaut `scripts/deploy.sh` alle fünf Minuten nach (Zeitplan in `/etc/cron.d/putzplan-deploy`, Protokoll in `/var/log/putzplan-deploy.log`). Gibt es auf dem ausgecheckten Zweig einen neuen Stand, wird er gebaut. Die Tests laufen beim Bauen mit: schlägt einer fehl, entsteht kein Image und der alte Stand läuft weiter. Danach wird neu gestartet und geprüft, ob wirklich der neue Stand antwortet. Wenn nicht, geht es zurück auf den vorherigen. Vor jedem Update entsteht eine Kopie der Datenbank.
+
+Welcher Zweig ausgerollt wird, bestimmt der Server: der, der in `/opt/putzplan` ausgecheckt ist. Alles, was auf diesem Zweig landet, läuft wenige Minuten später. Welcher Stand läuft, steht in der App unter „Ich“ ganz unten und unter `/healthz`. Offene Apps bekommen nach einem Update einen Hinweis zum Aktualisieren.
+
+Automatik anhalten: die Datei `/etc/cron.d/putzplan-deploy` löschen. Von Hand ausrollen geht weiterhin mit `git pull && docker compose up -d --build`.
+
 ## Sicherung
 
 Jede Nacht um 3:30 Uhr läuft `scripts/backup.sh` (Zeitplan in `/etc/cron.d/putzplan-backup`, Protokoll in `/var/log/putzplan-backup.log`) und schreibt nach `/opt/backup/putzplan`:

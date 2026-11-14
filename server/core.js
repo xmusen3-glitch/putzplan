@@ -3,6 +3,8 @@ import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypt
 import { q, row, out } from './db.js';
 
 export class Fail extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+/** Stand des Codes, der gerade läuft (kurze Git-Kennung, beim Bauen gesetzt). */
+export const VERSION = process.env.APP_VERSION || 'dev';
 export const now = () => new Date().toISOString();
 const sha = s => createHash('sha256').update(s).digest('hex');
 

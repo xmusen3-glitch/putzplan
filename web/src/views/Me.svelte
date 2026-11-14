@@ -59,5 +59,5 @@
     {@render item('users', 'Person wechseln', 'Jemand anders nutzt dieses Gerät', () => tryDo(switchPerson))}
     {@render item('log-out', 'Gerät abmelden', 'Die Daten der Familie bleiben erhalten', () => confirm('Dieses Gerät abmelden? Zum Wiederkommen brauchst du den Einladungslink.') && tryDo(leave))}
   </section>
-  <p class="sub center">Putzplan Version 2</p>
+  <p class="sub center">Putzplan Version 2{S.version && S.version !== 'dev' ? ` · Stand ${S.version}` : ''}</p>
 </div>

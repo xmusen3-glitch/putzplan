@@ -2,7 +2,11 @@
 # Die Werte für APP_URL und PUSH_CONTACT stehen in der Datei .env neben dieser Datei (siehe .env.example).
 services:
   putzplan:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
+    image: putzplan-putzplan
     container_name: putzplan
     restart: unless-stopped
     environment:

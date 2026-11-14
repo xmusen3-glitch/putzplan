@@ -8,6 +8,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "vite build",
     "start": "node server/index.js",
+    "test": "node --test test/*.test.js",
     "umzug": "node server/migrate-v1.js",
     "einladung": "node server/invite.js",
     "pin": "node server/reset-pin.js"

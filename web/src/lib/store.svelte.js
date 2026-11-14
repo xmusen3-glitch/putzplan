@@ -19,6 +19,8 @@ class Store {
   now = $state(Date.now());
   online = $state(true);
   say = $state.raw(null); // letzte Durchsage
+  version = $state(''); // Stand des Servers beim Laden dieser Seite
+  update = $state(false); // der Server läuft inzwischen mit einem neueren Stand
 }
 export const S = new Store();
 
@@ -98,6 +100,9 @@ async function loadState() {
   S.reactions = [...st.reactions, ...S.reactions.filter(r => old.has(r.entry_id))];
   S.settings = { ...L.DEFAULT_SETTINGS, ...st.settings }; S.pushKey = st.push_key;
   if (!S.older.length) S.olderMore = !!st.older;
+  // Nach einem Update läuft im Handy noch der alte Stand der App: Hinweis zum Neuladen zeigen
+  if (!S.version) S.version = st.version || '';
+  else if (st.version && st.version !== S.version) S.update = true;
 }
 /** Die nächste Seite älterer Fotos holen. */
 export async function loadOlder() {

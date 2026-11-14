@@ -47,6 +47,7 @@
       <div class="who"><span class="ava sm">{G.me.emoji}</span><div><b>{G.me.name}</b><small>{ROLES[G.me.role]}</small></div></div>
     </aside>
     <main>
+      {#if S.update}<button class="strip c-info" style="width:100%;text-align:left" onclick={() => location.reload()}><Icon name="refresh-cw" size={16} />Es gibt eine neue Version. Antippen zum Aktualisieren.</button>{/if}
       {#if !S.online}<div class="strip c-warn"><Icon name="wifi-off" size={16} />Keine Verbindung. Änderungen der anderen kommen gleich nach.</div>{/if}
       <View />
     </main>
