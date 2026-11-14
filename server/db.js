@@ -1,6 +1,6 @@
 // SQLite-Datenbank (eine Datei) und Foto-Ablage.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, renameSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { DEFAULT_SETTINGS } from '../shared/logic.js';
@@ -111,8 +111,12 @@ export const photoFile = (name, thumb) => join(PHOTOS, `${name}${thumb ? '.t' : 
 export function savePhoto(name, photo, thumb) {
   if (!SAFE.test(name)) throw Object.assign(new Error('Ungültiger Fotoname'), { status: 400 });
   const full = decode(photo, 900_000, 'Foto'), small = decode(thumb, 150_000, 'Vorschaubild');
-  writeFileSync(photoFile(name), full);
-  writeFileSync(photoFile(name, true), small);
+  // Erst daneben schreiben, dann umbenennen: eine vorhandene Datei wird so nie überschrieben, sondern ersetzt.
+  // Wichtig für die Sicherung, die Fotos als Hardlinks hält.
+  for (const [file, buf] of [[photoFile(name), full], [photoFile(name, true), small]]) {
+    writeFileSync(file + '.tmp', buf);
+    renameSync(file + '.tmp', file);
+  }
   return name;
 }
 export function delPhoto(name) {

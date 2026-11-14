@@ -82,6 +82,29 @@ Hat die einzige Admin-Person ihre PIN vergessen, hilft der Befehl am Server:
 docker exec putzplan node server/reset-pin.js Dorina
 ```
 
+## Sicherung
+
+Jede Nacht um 3:30 Uhr läuft `scripts/backup.sh` (Zeitplan in `/etc/cron.d/putzplan-backup`, Protokoll in `/var/log/putzplan-backup.log`) und schreibt nach `/opt/backup/putzplan`:
+
+- `db/`: eine geprüfte, gepackte Kopie der Datenbank pro Tag. 14 Tage bleiben, dazu der Monatserste für ein Jahr.
+- `photos/`: alle Fotos als Hardlinks. Das belegt keinen zusätzlichen Platz. Löscht die App ein Foto, bleibt es dort noch 30 Tage.
+
+Das schützt vor Fehlern und versehentlichem Löschen. Vor einem Ausfall der Festplatte schützt es nicht, dafür müsste eine Kopie auf einen anderen Rechner.
+
+Zurückholen (Stand eines Tages):
+
+```bash
+cd /opt/putzplan && docker compose stop
+```
+
+```bash
+gunzip -c /opt/backup/putzplan/db/putzplan-JJJJ-MM-TT.db.gz > data/putzplan.db && rm -f data/putzplan.db-wal data/putzplan.db-shm && chown 1000:1000 data/putzplan.db
+```
+
+```bash
+cp -aln /opt/backup/putzplan/photos/. data/photos/ ; docker compose start
+```
+
 ## Speicherplatz
 
 Weil Fotos nicht mehr gelöscht werden, wächst der Ordner `data/photos`. Grob gerechnet: zwei Fotos je Aufgabe mit zusammen etwa 0,4 MB, bei 30 Aufgaben am Tag sind das rund 4 bis 5 GB im Jahr. Der Ordner gehört in die Sicherung.
